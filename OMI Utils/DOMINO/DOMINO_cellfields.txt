@@ -1,0 +1,2 @@
+TroposphericColumnFlag
+GroundPixelQualityFlags

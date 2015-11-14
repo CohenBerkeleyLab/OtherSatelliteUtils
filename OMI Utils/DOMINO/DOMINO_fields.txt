@@ -1,0 +1,11 @@
+AirMassFactorTropospheric
+AveragingKernel
+CloudFraction
+CloudPressure
+GhostColumn
+SlantColumnAmountNO2
+SlantColumnAmountNO2Std
+SurfaceAlbedo
+TerrainHeight
+TroposphericVerticalColumn
+TroposphericVerticalColumnError
