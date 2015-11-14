@@ -6,6 +6,7 @@ function [  ] = load_and_grid_DOMINO( start_date, end_date )
 %   be important if you want to use a finer gridding resolution).
 
 E = JLLErrors;
+DEBUG_LEVEL = 2;
 
 global onCluster
 if isempty(onCluster)
@@ -34,6 +35,7 @@ data_fields = { 'AirMassFactorTropospheric','';...
                 'SlantColumnAmountNO2Std','';...
                 'SurfaceAlbedo','';...
                 'TerrainHeight','';...
+                'TroposphericColumnFlag','';...
                 'TroposphericVerticalColumn','';...
                 'TroposphericVerticalColumnError',''};   
 geo_fields = {  'Longitude','';...
@@ -57,6 +59,8 @@ end
 all_struct_fields = cat(1,geo_fields(:,2),data_fields(:,2));
 
 for d=datenum(start_date):datenum(end_date)
+    if DEBUG_LEVEL > 0; fprintf('Loading/gridding data for %s\n',datestr(d)); end
+
     % DOMINO data should be organized in subfolders by year and month
     full_path = fullfile(domino_path, sprintf('%04d',year(d)), sprintf('%02d',month(d)));
     file_pat = sprintf('OMI-Aura_L2-OMDOMINO_%04dm%02d%02d*.he5',year(d),month(d),day(d));
@@ -69,7 +73,7 @@ for d=datenum(start_date):datenum(end_date)
     GC = struct('AirMassFactorTropospheric', omi_mat, 'AveragingKernel', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat,...
         'GhostColumn', omi_mat, 'SlantColumnAmountNO2', omi_mat, 'SlantColumnAmountNO2Std', omi_mat, 'SurfaceAlbedo', omi_mat,...
         'TerrainHeight', omi_mat, 'TroposphericVerticalColumn', omi_mat, 'TroposphericVerticalColumnError', omi_mat,...
-        'Area', omi_mat,'Areaweight', omi_mat, 'TroposphericColumnFlag', omi_cell, 'GroundPixelQualityFlags', omi_cell);
+        'Areaweight', omi_mat, 'TroposphericColumnFlag', omi_cell, 'GroundPixelQualityFlags', omi_cell);
     GC = repmat(GC,1,numel(F));
     
     %lonmin = -180;  lonmax = 180;
@@ -77,6 +81,7 @@ for d=datenum(start_date):datenum(end_date)
     %reslat = 2; reslon = 2.5;
     
     for s=1:numel(F)
+        if DEBUG_LEVEL > 1; fprintf('\tHandling file %d of %d\n',s,numel(F)); end
         hi = h5info(fullfile(full_path, F(s).name));
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
         Data(s) = read_fields(Data(s), hi, 1, data_fields);
@@ -118,11 +123,13 @@ for a=1:sz(1)
         fns = fieldnames(GC);
         for c=1:numel(fns)
             Data.(fns{c})(row_anom | clds | alb) = nan;
-            if iscell(GC.(fns{c}))
-                GC.(fns{c}){a,b} = Data.(fns{c})(xx&yy);
-            else
-                % Calculate an area-weighted mean
-                GC.(fns{c})(a,b) = nansum2(Data.(fns{c}).(xx&yy) .* Data.Areaweight(xx&yy)) ./ nansum2(Data.Areaweight(xx&yy));
+            if sum(xx(:)&yy(:)) > 0
+                if iscell(GC.(fns{c}))
+                    GC.(fns{c}){a,b} = Data.(fns{c})(xx&yy);
+                else
+                    % Calculate an area-weighted mean
+                    GC.(fns{c})(a,b) = nansum2(Data.(fns{c})(xx&yy) .* Data.Areaweight(xx&yy)) ./ nansum2(Data.Areaweight(xx&yy));
+                end
             end
         end
     end
@@ -131,15 +138,15 @@ end
 end
 
 function Data = calc_pixel_area(Data)
-Lon1 = squeeze(Data.Loncorn(1,:,:));
-Lon2 = squeeze(Data.Loncorn(2,:,:));
-Lon3 = squeeze(Data.Loncorn(3,:,:));
-Lon4 = squeeze(Data.Loncorn(4,:,:));
+Lon1 = Data.Loncorn(:,:,1);
+Lon2 = Data.Loncorn(:,:,2);
+Lon3 = Data.Loncorn(:,:,3);
+Lon4 = Data.Loncorn(:,:,4);
 
-Lat1 = squeeze(Data.Latcorn(1,:,:));
-Lat2 = squeeze(Data.Latcorn(2,:,:));
-Lat3 = squeeze(Data.Latcorn(3,:,:));
-Lat4 = squeeze(Data.Latcorn(4,:,:));
+Lat1 = Data.Latcorn(:,:,1);
+Lat2 = Data.Latcorn(:,:,2);
+Lat3 = Data.Latcorn(:,:,3);
+Lat4 = Data.Latcorn(:,:,4);
 
 Data.Areaweight = nan(size(Data.Longitude));
 
@@ -151,20 +158,18 @@ for x=1:size(Lon1,1)
 end
 end
 
-function Data = read_fields(Data, hi, gnum, field_names, keep_int)
+function Data = read_fields(Data, hi, gnum, field_names)
 % Reads in specified fields from the .he5 file given. hi should be the
 % result of h5info.
 for f=1:size(field_names,1)
-    fillval = h5readatt(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}), 'MissingValue');
-    offset = h5readatt(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}), 'Offset');
-    scalefactor = h5readatt(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}), 'ScaleFactor');
+    fillval = double(h5readatt(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}), 'MissingValue'));
+    offset = double(h5readatt(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}), 'Offset'));
+    scalefactor = double(h5readatt(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}), 'ScaleFactor'));
     
-    Data.(field_names{f,2}) = (h5read(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1})) - offset) * scalefactor;
+    
+    Data.(field_names{f,2}) = double(Data.(field_names{f,2}));
+    Data.(field_names{f,2}) = (double(h5read(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}))) - offset) * scalefactor;
     Data.(field_names{f,2})(Data.(field_names{f,2}) == fillval) = nan;
-    
-    if  ~keep_int || ~isinteger(Data.(field_names{f,2}))
-        Data.(field_names{f,2}) = double(Data.(field_names{f,2}));
-    end
 end
 end
 
