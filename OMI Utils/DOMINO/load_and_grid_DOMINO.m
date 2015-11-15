@@ -70,7 +70,7 @@ for d=datenum(start_date):datenum(end_date)
     
     omi_mat = nan(144,91);
     omi_cell = cell(144,91);
-    GC = struct('AirMassFactorTropospheric', omi_mat, 'AveragingKernel', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat,...
+    GC = struct('AirMassFactorTropospheric', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat,...
         'GhostColumn', omi_mat, 'SlantColumnAmountNO2', omi_mat, 'SlantColumnAmountNO2Std', omi_mat, 'SurfaceAlbedo', omi_mat,...
         'TerrainHeight', omi_mat, 'TroposphericVerticalColumn', omi_mat, 'TroposphericVerticalColumnError', omi_mat,...
         'Areaweight', omi_mat, 'TroposphericColumnFlag', {omi_cell}, 'GroundPixelQualityFlags', {omi_cell});
@@ -115,6 +115,7 @@ Data = calc_pixel_area(Data);
 row_anom = Data.TroposphericColumnFlag < 0;
 clds = Data.CloudFraction > 0.3;
 alb = Data.SurfaceAlbedo > 0.3;
+negvcds = Data.TroposphericVerticalColumn < 0;
 
 for a=1:sz(1)
     for b=1:sz(2)
@@ -122,7 +123,7 @@ for a=1:sz(1)
         yy = Data.Latitude >= glatcorn(a,b) & Data.Latitude < glatcorn(a+1,b+1);
         fns = fieldnames(GC);
         for c=1:numel(fns)
-            Data.(fns{c})(row_anom | clds | alb) = nan;
+            Data.(fns{c})(row_anom | clds | alb | negvcds) = nan;
             if sum(xx(:)&yy(:)) > 0
                 if iscell(GC.(fns{c}))
                     GC.(fns{c}){a,b} = Data.(fns{c})(xx&yy);
@@ -151,9 +152,10 @@ Lat4 = Data.Latcorn(:,:,4);
 Data.Areaweight = nan(size(Data.Longitude));
 
 for x=1:size(Lon1,1)
-    for y=size(Lon1,2)
+    for y=1:size(Lon1,2)
         pixelarea = (m_lldist([Lon1(x,y)-180 Lon2(x,y)-180],[Lat1(x,y) Lat2(x,y)]))*(m_lldist([Lon1(x,y)-180, Lon4(x,y)-180],[Lat1(x,y), Lat4(x,y)]));
         Data.Areaweight(x,y) = 1/pixelarea;
+        fprintf('%d %d: %f, %f\n',x,y,pixelarea,Data.Areaweight(x,y));
     end
 end
 end
