@@ -15,7 +15,7 @@ end
 
 if onCluster
     domino_path = '/global/home/users/laughner/myscratch/SAT/OMI/DOMINOv2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/0.25x0.25';
 else
     domino_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0';
     save_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0/MatFiles';
@@ -73,7 +73,8 @@ for d=datenum(start_date):datenum(end_date)
     GC = struct('AirMassFactorTropospheric', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat,...
         'GhostColumn', omi_mat, 'SlantColumnAmountNO2', omi_mat, 'SlantColumnAmountNO2Std', omi_mat, 'SurfaceAlbedo', omi_mat,...
         'TerrainHeight', omi_mat, 'TroposphericVerticalColumn', omi_mat, 'TroposphericVerticalColumnError', omi_mat,...
-        'Areaweight', omi_mat, 'TroposphericColumnFlag', {omi_cell}, 'GroundPixelQualityFlags', {omi_cell});
+        'TotalVerticalColumn', omi_mat, 'TotalVerticalColumnError', omi_mat, 'Areaweight', omi_mat,...
+         'TroposphericColumnFlag', {omi_cell}, 'GroundPixelQualityFlags', {omi_cell});
     GC = repmat(GC,1,numel(F));
     
     %lonmin = -180;  lonmax = 180;
@@ -101,8 +102,15 @@ function saveData(filename,Data, GC)
     save(filename,'GC','Data')
 end
 
+function [loncorn, latcorn] = grid_corners(lonres, latres)
+    loncorn = -180:lonres:180;
+    latcorn = -90:latres:90;
+    [loncorn, latcorn] = meshgrid(loncorn, latcorn);
+end
+
 function GC = grid_to_gc(Data, GC)
-[gloncorn, glatcorn] = geos_chem_corners();
+%[gloncorn, glatcorn] = geos_chem_corners();
+[gloncorn, glatcorn] = grid_corners(0.25, 0.25);
 gloncorn = gloncorn';
 glatcorn = glatcorn';
 
@@ -117,23 +125,38 @@ clds = Data.CloudFraction > 0.3;
 alb = Data.SurfaceAlbedo > 0.3;
 negvcds = Data.TroposphericVerticalColumn < 0;
 
+fns = fieldnames(GC);
+for c=1:numel(fns)
+    Data.(fns{c})(row_anom | clds | alb | negvcds) = nan;
+end
+
+
 for a=1:sz(1)
+    if mod(a,25) == 1
+        fprintf('Now on %d of %d\n',a,sz(1));
+    end
+    tval_a = tic;
     for b=1:sz(2)
+        tval=tic;
         xx = Data.Longitude >= gloncorn(a,b) & Data.Longitude < gloncorn(a+1,b+1);
         yy = Data.Latitude >= glatcorn(a,b) & Data.Latitude < glatcorn(a+1,b+1);
-        fns = fieldnames(GC);
+        fprintf('\t Timer: xx yy = %f\n',toc(tval));
         for c=1:numel(fns)
-            Data.(fns{c})(row_anom | clds | alb | negvcds) = nan;
             if sum(xx(:)&yy(:)) > 0
                 if iscell(GC.(fns{c}))
+                    tval=tic;
                     GC.(fns{c}){a,b} = Data.(fns{c})(xx&yy);
+                    fprintf('\t Timer: binning cell arrays = %f\n',toc(tval));
                 else
                     % Calculate an area-weighted mean
+                    tval=tic;
                     GC.(fns{c})(a,b) = nansum2(Data.(fns{c})(xx&yy) .* Data.Areaweight(xx&yy)) ./ nansum2(Data.Areaweight(xx&yy));
+                    fprintf('\t Timer: averaging = %f\n',toc(tval));
                 end
             end
         end
     end
+    fprintf('  Timer: one loop over b = %f\n',toc(tval_a));
 end
 
 end
@@ -155,7 +178,6 @@ for x=1:size(Lon1,1)
     for y=1:size(Lon1,2)
         pixelarea = (m_lldist([Lon1(x,y)-180 Lon2(x,y)-180],[Lat1(x,y) Lat2(x,y)]))*(m_lldist([Lon1(x,y)-180, Lon4(x,y)-180],[Lat1(x,y), Lat4(x,y)]));
         Data.Areaweight(x,y) = 1/pixelarea;
-        fprintf('%d %d: %f, %f\n',x,y,pixelarea,Data.Areaweight(x,y));
     end
 end
 end
