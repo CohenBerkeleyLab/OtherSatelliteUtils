@@ -58,7 +58,11 @@ end
 
 all_struct_fields = cat(1,geo_fields(:,2),data_fields(:,2));
 
-for d=datenum(start_date):datenum(end_date)
+[loncorn, latcorn] = grid_corners(0.25, 0.25);
+loncorn = loncorn';
+latcorn = latcorn';
+
+parfor d=datenum(start_date):datenum(end_date)
     if DEBUG_LEVEL > 0; fprintf('Loading/gridding data for %s\n',datestr(d)); end
 
     % DOMINO data should be organized in subfolders by year and month
@@ -68,8 +72,8 @@ for d=datenum(start_date):datenum(end_date)
     Data = make_empty_struct_from_cell(all_struct_fields);
     Data = repmat(Data,1,numel(F));
     
-    omi_mat = nan(144,91);
-    omi_cell = cell(144,91);
+    omi_mat = nan(size(loncorn));
+    omi_cell = cell(size(loncorn));
     GC = struct('AirMassFactorTropospheric', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat,...
         'GhostColumn', omi_mat, 'SlantColumnAmountNO2', omi_mat, 'SlantColumnAmountNO2Std', omi_mat, 'SurfaceAlbedo', omi_mat,...
         'TerrainHeight', omi_mat, 'TroposphericVerticalColumn', omi_mat, 'TroposphericVerticalColumnError', omi_mat,...
@@ -84,10 +88,11 @@ for d=datenum(start_date):datenum(end_date)
     for s=1:numel(F)
         if DEBUG_LEVEL > 1; fprintf('\tHandling file %d of %d\n',s,numel(F)); end
         hi = h5info(fullfile(full_path, F(s).name));
+        Data(s).Filename = F(s).name;
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
         Data(s) = read_fields(Data(s), hi, 1, data_fields);
         %OMI(s) = add2grid_DOMINO(Data(s),OMI(s),reslat,reslon,[lonmin, lonmax],[latmin, latmax]);
-        GC(s) = grid_to_gc(Data(s), GC(s));
+        GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn);
     end
     
     save_name = sprintf('OMI_DOMINO_%04d%02d%02d.mat',year(d),month(d),day(d));
@@ -105,18 +110,21 @@ end
 function [loncorn, latcorn] = grid_corners(lonres, latres)
     loncorn = -180:lonres:180;
     latcorn = -90:latres:90;
+    % Add a little give on the last corner since we test >= the lower index
+    % corner but < the higher index one; this will prevent issues with pixels
+    % at exactly 180 E or 90 N
+    loncorn(end)=180.1;
+    latcorn(end)=90.1;
     [loncorn, latcorn] = meshgrid(loncorn, latcorn);
 end
 
-function GC = grid_to_gc(Data, GC)
+function GC = grid_to_gc(Data, GC, gloncorn, glatcorn)
 %[gloncorn, glatcorn] = geos_chem_corners();
-[gloncorn, glatcorn] = grid_corners(0.25, 0.25);
-gloncorn = gloncorn';
-glatcorn = glatcorn';
 
 sz = size(gloncorn)-1;
 
 Data = calc_pixel_area(Data);
+TotalAreaweight = zeros(size(GC.TroposphericVerticalColumn));
 
 % Filter for clouds, row anomaly and albedo (DOMINO recommends only using
 % albedo < 0.3 as snow/ice can interfere in cloud retrieval)
@@ -130,34 +138,72 @@ for c=1:numel(fns)
     Data.(fns{c})(row_anom | clds | alb | negvcds) = nan;
 end
 
+glon_vec = gloncorn(:,1);
+glat_vec = glatcorn(1,:);
 
-for a=1:sz(1)
-    if mod(a,25) == 1
-        fprintf('Now on %d of %d\n',a,sz(1));
+fprintf('Starting loop\n');
+tval = tic;
+for a=1:numel(Data.Longitude)
+    %if mod(a,100) == 1
+     %   fprintf('Pixel %d: time elapsed = %f\n',a,toc(tval));
+    %end
+    if Data.Longitude(a) < -200 || Data.Latitude(a) < -200 || isnan(Data.Longitude(a)) || isnan(Data.Latitude(a))
+        % Fill values are ~1x10^-30, this will skip any pixels with
+        % fill values for coordinates
+        continue
     end
-    tval_a = tic;
-    for b=1:sz(2)
-        tval=tic;
-        xx = Data.Longitude >= gloncorn(a,b) & Data.Longitude < gloncorn(a+1,b+1);
-        yy = Data.Latitude >= glatcorn(a,b) & Data.Latitude < glatcorn(a+1,b+1);
-        fprintf('\t Timer: xx yy = %f\n',toc(tval));
-        for c=1:numel(fns)
-            if sum(xx(:)&yy(:)) > 0
-                if iscell(GC.(fns{c}))
-                    tval=tic;
-                    GC.(fns{c}){a,b} = Data.(fns{c})(xx&yy);
-                    fprintf('\t Timer: binning cell arrays = %f\n',toc(tval));
-                else
-                    % Calculate an area-weighted mean
-                    tval=tic;
-                    GC.(fns{c})(a,b) = nansum2(Data.(fns{c})(xx&yy) .* Data.Areaweight(xx&yy)) ./ nansum2(Data.Areaweight(xx&yy));
-                    fprintf('\t Timer: averaging = %f\n',toc(tval));
-                end
-            end
-        end
+    xx = Data.Longitude(a) >= glon_vec(1:end-1) & Data.Longitude(a) < glon_vec(2:end);
+    yy = Data.Latitude(a) >= glat_vec(1:end-1) & Data.Latitude(a) < glat_vec(2:end);
+    if sum(xx) > 1 || sum(yy) > 1
+        error('load_and_grid_DOMINO:pixel_assignment_error', 'Pixel %d in %s fell into more than 1 grid cell', a, Data.Filename);
+    elseif sum(xx) < 1 || sum(yy) < 1
+        error('load_and_grid_DOMINO:pixel_assignment_error', 'Pixel %d in %s could not be assigned to a grid cell', a, Data.Filename);
     end
-    fprintf('  Timer: one loop over b = %f\n',toc(tval_a));
+    TotalAreaweight(xx,yy) = nansum2([TotalAreaweight(xx,yy), Data.Areaweight(a)]);
+    for c=1:numel(fns)
+        if iscell(GC.(fns{c}))
+           GC.(fns{c}){xx,yy} = cat(1,GC.(fns{c}){xx,yy},Data.(fns{c})(a));
+        else
+            % The areaweight will be divided out at the end of the loop
+            GC.(fns{c})(xx,yy) = nansum2([GC.(fns{c})(xx,yy), Data.(fns{c})(a) .* Data.Areaweight(a)]);
+        end 
+    end
 end
+
+for c=1:numel(fns)
+    if ~iscell(GC.(fns{c}))
+        GC.(fns{c}) = GC.(fns{c}) ./ TotalAreaweight;
+    end
+end
+fprintf('\t Time for one file = %f\n',toc(tval));
+
+%for a=1:sz(1)
+%    if mod(a,25) == 1
+%        fprintf('Now on %d of %d\n',a,sz(1));
+%    end
+%    tval_a = tic;
+%    for b=1:sz(2)
+%        tval=tic;
+%        xx = Data.Longitude >= gloncorn(a,b) & Data.Longitude < gloncorn(a+1,b+1);
+%        yy = Data.Latitude >= glatcorn(a,b) & Data.Latitude < glatcorn(a+1,b+1);
+%        fprintf('\t Timer: xx yy = %f\n',toc(tval));
+%        for c=1:numel(fns)
+%            if sum(xx(:)&yy(:)) > 0
+%                if iscell(GC.(fns{c}))
+%                    tval=tic;
+%                    GC.(fns{c}){a,b} = Data.(fns{c})(xx&yy);
+%                    fprintf('\t Timer: binning cell arrays = %f\n',toc(tval));
+%                else
+%                    % Calculate an area-weighted mean
+%                    tval=tic;
+%                    GC.(fns{c})(a,b) = nansum2(Data.(fns{c})(xx&yy) .* Data.Areaweight(xx&yy)) ./ nansum2(Data.Areaweight(xx&yy));
+%                    fprintf('\t Timer: averaging = %f\n',toc(tval));
+%                end
+%            end
+%        end
+%    end
+%    fprintf('  Timer: one loop over b = %f\n',toc(tval_a));
+%end
 
 end
 
