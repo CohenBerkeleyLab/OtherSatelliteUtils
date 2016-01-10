@@ -1,5 +1,5 @@
-function [  ] = load_and_grid_DOMINO( start_date, end_date )
-%LOAD_AND_GRID_DOMINO Read in and grid DOMINO data.
+function [  ] = load_and_grid_OMNO2( start_date, end_date )
+%LOAD_AND_GRID_OMNO2 Read in and grid level 2 OMNO2 data.
 %   Current implementation will simply assume that you wish to load
 %   worldwide data.  This will simplify the coding slightly, but will need
 %   to be modified later if you want to only load e.g. US data (which would
@@ -14,11 +14,11 @@ if isempty(onCluster)
 end
 
 if onCluster
-    domino_path = '/global/home/users/laughner/myscratch/SAT/OMI/DOMINOv2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/0.25x0.25';
+    omno2_path = '/global/home/users/laughner/myscratch/SAT/OMI/OMNO2';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/0.25x0.25';
 else
-    domino_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0';
-    save_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0/MatFiles';
+    omno2_path = '/Volumes/share-sat/SAT/OMI/OMNO2';
+    save_path = '/Volumes/share-sat/SAT/OMI/OMNO2/MatFiles';
 end
 
 % These should be nx2 cell arrays; the first column lists the dataset name
@@ -26,26 +26,25 @@ end
 % structure. Make the second column an empty string if you want it to be
 % the same as the first. data_fields will be read from the 'Data Fields'
 % group, and geo_fields from the "Geolocation Fields" group.
-data_fields = { 'AirMassFactorTropospheric','';...
-                'AssimilatedStratosphericSlantColumn','';...
-                'AssimilatedStratosphericVerticalColumn','';...
-                'AveragingKernel','';...
+data_fields = { 'AmfTrop','';...
+                'ScatteringWeight','';...
                 'CloudFraction','';...
                 'CloudPressure','';...
-                'GhostColumn','';...
                 'SlantColumnAmountNO2','';...
+                'SlantColumnAmountNO2Destriped','';...
                 'SlantColumnAmountNO2Std','';...
-                'SurfaceAlbedo','';...
+                'TerrainReflectivity','';...
                 'TerrainHeight','';...
-                'TotalVerticalColumn','';...
-                'TotalVerticalColumnError','';...
-                'TroposphericColumnFlag','';...
-                'TroposphericVerticalColumn','';...
-                'TroposphericVerticalColumnError',''};   
+                'VcdQualityFlags','';...
+                'XTrackQualityFlags','';...
+                'ColumnAmountNO2Trop','';...
+                'ColumnAmountNO2TropStd','';...
+                'ColumnAmountNO2Strat','';...
+                'ColumnAmountNO2StratStd',''};
 geo_fields = {  'Longitude','';...
-                'LongitudeCornerpoints','Loncorn';...
+                'FoV75CornerLongitude','Loncorn';...
                 'Latitude','';...
-                'LatitudeCornerpoints','Latcorn';...
+                'FoV75CornerLatitude','Latcorn';...
                 'GroundPixelQualityFlags',''};
             
 for a=1:size(data_fields,1)
@@ -69,24 +68,23 @@ lon = loncorn(1:end-1,1:end-1) + xres/2;
 latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
 
-parfor d=datenum(start_date):datenum(end_date)
+for d=datenum(start_date):datenum(end_date)
     if DEBUG_LEVEL > 0; fprintf('Loading/gridding data for %s\n',datestr(d)); end
 
-    % DOMINO data should be organized in subfolders by year and month
-    full_path = fullfile(domino_path, sprintf('%04d',year(d)), sprintf('%02d',month(d)));
-    file_pat = sprintf('OMI-Aura_L2-OMDOMINO_%04dm%02d%02d*.he5',year(d),month(d),day(d));
+    % OMNO2 data should be organized in subfolders by year and month
+    full_path = fullfile(omno2_path, sprintf('%04d',year(d)), sprintf('%02d',month(d)));
+    file_pat = sprintf('OMI-Aura_L2-OMNO2_%04dm%02d%02d*.he5',year(d),month(d),day(d));
     F = dir(fullfile(full_path, file_pat));
     Data = make_empty_struct_from_cell(all_struct_fields);
     Data = repmat(Data,1,numel(F));
     
     omi_mat = nan(size(loncorn)-1);
     omi_cell = cell(size(loncorn)-1);
-    GC = struct('AirMassFactorTropospheric', omi_mat, 'AssimilatedStratosphericSlantColumn', omi_mat,...
-        'AssimilatedStratosphericVerticalColumn', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat,...
-        'GhostColumn', omi_mat, 'SlantColumnAmountNO2', omi_mat, 'SlantColumnAmountNO2Std', omi_mat, 'SurfaceAlbedo', omi_mat,...
-        'TerrainHeight', omi_mat, 'TroposphericVerticalColumn', omi_mat, 'TroposphericVerticalColumnError', omi_mat,...
-        'TotalVerticalColumn', omi_mat, 'TotalVerticalColumnError', omi_mat, 'Areaweight', omi_mat,...
-         'TroposphericColumnFlag', {omi_cell}, 'GroundPixelQualityFlags', {omi_cell});
+    GC = struct('AmfTrop', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat, 'SlantColumnAmountNO2', omi_mat,...
+        'SlantColumnAmountNO2Destriped', omi_mat, 'SlantColumnAmountNO2Std', omi_mat, 'TerrainReflectivity', omi_mat,...
+        'TerrainHeight', omi_mat, 'ColumnAmountNO2Trop', omi_mat, 'ColumnAmountNO2TropStd', omi_mat,...
+        'ColumnAmountNO2Strat', omi_mat, 'ColumnAmountNO2StratStd', omi_mat, 'Areaweight', omi_mat,...
+         'VcdQualityFlags', {omi_cell}, 'XTrackQualityFlags', {omi_cell}, 'GroundPixelQualityFlags', {omi_cell});
     GC = repmat(GC,1,numel(F));
     
     %lonmin = -180;  lonmax = 180;
@@ -102,14 +100,14 @@ parfor d=datenum(start_date):datenum(end_date)
         %OMI(s) = add2grid_DOMINO(Data(s),OMI(s),reslat,reslon,[lonmin, lonmax],[latmin, latmax]);
         GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn);
     end
-    
+
     for s=1:numel(GC)
-        % Add these now so that grid_to_gc doesn't try to grid them.
+        % Add these now so that grid_to_gc doesn't try to grid them
         GC(s).Longitude = lon;
         GC(s).Latitude = lat;
-    end    
+    end
 
-    save_name = sprintf('OMI_DOMINO_%04d%02d%02d.mat',year(d),month(d),day(d));
+    save_name = sprintf('OMI_OMNO2_%04d%02d%02d.mat',year(d),month(d),day(d));
     saveData(fullfile(save_path,save_name),Data,GC);
 
 end
@@ -138,18 +136,20 @@ function GC = grid_to_gc(Data, GC, gloncorn, glatcorn)
 sz = size(gloncorn)-1;
 
 Data = calc_pixel_area(Data);
-TotalAreaweight = zeros(size(GC.TroposphericVerticalColumn));
+TotalAreaweight = zeros(size(GC.ColumnAmountNO2Trop));
 
 % Filter for clouds, row anomaly and albedo (DOMINO recommends only using
 % albedo < 0.3 as snow/ice can interfere in cloud retrieval)
-row_anom = Data.TroposphericColumnFlag < 0;
+row_anom = Data.XTrackQualityFlags > 0;
+vcd_qual = Data.VcdQualityFlags > 0;
 clds = Data.CloudFraction > 0.3;
-alb = Data.SurfaceAlbedo > 0.3;
-negvcds = Data.TroposphericVerticalColumn < 0;
+alb = Data.TerrainReflectivity > 0.3;
+negvcds = Data.ColumnAmountNO2Trop < 0;
+extreme_vcd = Data.ColumnAmountNO2Trop > 1e17;
 
 fns = fieldnames(GC);
 for c=1:numel(fns)
-    Data.(fns{c})(row_anom | clds | alb | negvcds) = nan;
+    Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
 end
 
 glon_vec = gloncorn(:,1);
@@ -169,9 +169,9 @@ for a=1:numel(Data.Longitude)
     xx = Data.Longitude(a) >= glon_vec(1:end-1) & Data.Longitude(a) < glon_vec(2:end);
     yy = Data.Latitude(a) >= glat_vec(1:end-1) & Data.Latitude(a) < glat_vec(2:end);
     if sum(xx) > 1 || sum(yy) > 1
-        error('load_and_grid_DOMINO:pixel_assignment_error', 'Pixel %d in %s fell into more than 1 grid cell', a, Data.Filename);
+        error('load_and_grid_OMNO2:pixel_assignment_error', 'Pixel %d in %s fell into more than 1 grid cell', a, Data.Filename);
     elseif sum(xx) < 1 || sum(yy) < 1
-        error('load_and_grid_DOMINO:pixel_assignment_error', 'Pixel %d in %s could not be assigned to a grid cell', a, Data.Filename);
+        error('load_and_grid_OMNO2:pixel_assignment_error', 'Pixel %d in %s could not be assigned to a grid cell', a, Data.Filename);
     end
     TotalAreaweight(xx,yy) = nansum2([TotalAreaweight(xx,yy), Data.Areaweight(a)]);
     for c=1:numel(fns)
