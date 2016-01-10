@@ -1,80 +1,44 @@
-function [  ] = domino_omno2_comparison_plots( )
+function [  ] = domino_omno2_comparison_plots( files )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%% USER DEFINED VALUES %%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% INPUT CHECKING %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Define paths to the gridded files. This should be the path that has two
-% subfolders, DOMINO and OMNO2, which each have under them data organised
-% by resolution and year. The data should be the output of the
-% "load_and_grid" functions, and so should have the variables "Data" and
-% "GC" in them.
-global onCluster
-if isempty(onCluster)
-    onCluster = false;
-end
-if onCluster
-    data_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO-OMNO2-Comparison';
-else
-    data_path = '/Volumes/share2/USERS/LaughnerJ/DOMINO-OMNO2_comparision';
-    save_path = '/Users/Josh/Documents/MATLAB/Non BEHR Satellite/Workspaces/DOMINO-OMNO2-Comparison';
+if ~iscellstr(files)
+    error('domino_omno2_comparison_plots:bad_input','The input "files" must be a cell array of filenames as strings');
 end
 
-% Set to true if you want to save the matrices of daily averaged values to
-% work with separately later.
-save_daily_avg_mats = true;
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% DATA LOADING %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Define the year to compare here.
-yr = 2012;
+% The files should all contain two variables: DOMINO and OMNO2, both of
+% which will be structures with the respective variables to compare as the
+% fields. These will need to be concatenated along the third dimension, as
+% the function that put them together can be split up in time to make the
+% computation manageable.
 
-% Define the resolution. Used for the path and the initialization of the
-% matrices.
-lonres = 0.25;
-latres = 0.25;
+D(numel(files)).DOMINO = struct;
+D(numel(files)).OMNO2 = struct;
 
-% These should be the names of the fields in the GC structure that you want
-% to compare across. The first column should be the DOMINO field name, the
-% second the OMNO2 field name.
+for a = 1:numel(files)
+    D(a) = load(files{a});
+end
 
-fields_to_plot = {  'TroposphericVerticalColumn', 'ColumnAmountNO2Trop'};%;...
-    %'AirMassFactorTropospheric', 'AmfTrop';...
-    %'AssimilatedStratosphericVerticalColumn', 'ColumnAmountNO2Strat';...
-    %'SlantColumnAmountNO2', 'SlantColumnAmountNO2Destriped'};
+fns_domino = fieldnames(D(1).DOMINO);
+fns_omno2 = fieldnames(D(1).OMNO2);
 
-%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%% MAIN FUNCTION %%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%
+if numel(fns_domino) ~= numel(fns_omno2)
+    error('domino_omno2_comparison_plots:bad_data','The DOMINO and OMNO2 variables have a different number of fields');
+end
 
-% The first step will be to load all the days of the year, average the
-% swaths down to a single matrix for that day, and put that average into
-% the larger matrix.
+nfields = numel(fns_domino);
 
-%dates = datenum(sprintf('%04d-01-01',yr)):datenum(sprintf('%04d-12-31',yr));
-dates = datenum(sprintf('%04d-01-01',yr)):datenum(sprintf('%04d-01-03',yr));
-
-ndays = numel(dates);
-nfields = size(fields_to_plot,1);
-nlons = 360/lonres;
-nlats = 180/latres;
-
-daily_domino = nan(nlons,nlats,ndays,nfields);
-daily_omno2 = nan(nlons,nlats,ndays,nfields);
-
-% Loading the variables will take a long time so run it in parallel. (This
-% may not actually save time, it depends on if the files system is
-% optimized for parallel reads).
-
-%parfor d=1:ndays
-for d=1:ndays
-    tmp_mats_domino = load_and_avg('DOMINO', dates(d), lonres, nlons, latres, nlats, fields_to_plot(:,1), data_path); %#ok<PFBNS>
-    tmp_mats_omno2 = load_and_avg('OMNO2', dates(d), lonres, nlons, latres, nlats, fields_to_plot(:,2), data_path);
-    for a = 1:nfields
-        daily_domino(:,:,d,a) = tmp_mats_domino(:,:,a);
-        daily_omno2(:,:,d,a) = tmp_mats_omno2(:,:,a);
-    end
+for a = 1:numel(fns_domino)
+    DOMINO.(fns_domino{a}) = cat(3, D.DOMINO.(fns_domino{a}));
+    OMNO2.(fns_omno2{a}) = cat(3, D.OMNO2.(fns_domino{a}));
 end
 
 % Now actually go through and for each lat/lon box and each variable,
@@ -92,8 +56,8 @@ w=warning('off','all');
 for a=1:nlons
     for b=1:nlats
         for f=1:nfields
-            domino_data = squeeze(daily_domino(a,b,:,f));
-            omno2_data = squeeze(daily_omno2(a,b,:,f));
+            domino_data = squeeze(DOMINO.(fns_domino{f})(a,b,:));
+            omno2_data = squeeze(OMNO2.(fns_omno2{f})(a,b,:));
             [~,~,~,L] = calc_fit_line(domino_data, omno2_data, 'regression', 'rma');
             slopes(a,b,f) = L.P(1);
             intercepts(a,b,f) = L.P(2);
@@ -119,45 +83,9 @@ save(fullfile(save_path, savename), 'slopes', 'intercepts', 'r2s', 'stddevms', '
 % separate file. Do some variable rearraging to make it a little more
 % obvious what everything is.
 if save_daily_avg_mats
-    for a=1:nfields
-        DOMINO.(fields_to_plot{a,1}) = daily_domino(:,:,:,a);
-        OMNO2.(fields_to_plot{a,2}) = daily_omno2(:,:,:,a);
-    end
-    savename2_spec = 'domino-omno2_daily_mats-%d.mat';
-    i=0;
-    savename2 = sprintf(savename2_spec, i);
-    while exist(fullfile(save_path, savename2), 'file')
-        i=i+1;
-        savename2 = sprintf(savename2_spec, i);
-    end
-    save(fullfile(save_path, savename2), 'DOMINO', 'OMNO2','-v7.3');
-end
-
-
-end
-
-function avg_mats = load_and_avg(product, date_i, lonres, nlons, latres, nlats, fns, data_path)
-fname = sprintf('OMI_%s_%04d%02d%02d.mat',product,year(date_i),month(date_i),day(date_i));
-fullpath = fullfile(data_path,product,sprintf('%sx%s',num2str(lonres),num2str(latres)),fname); % num2str intelligently trims trailing zeros
-
-avg_mats = nan(nlons, nlats, numel(fns));
-
-if exist(fullpath,'file')
-    D = load(fullpath,'GC');
-    aw = cat(3, D.GC.Areaweight);
     
-    % DEBUG ONLY %
-    aw = aw(1:end-1,1:end-1,:);
-    %            %
-    
-    for a=1:numel(fns)
-        data = cat(3, D.GC.(fns{a}));
-        % DEBUG ONLY %
-        data = data(1:end-1,1:end-1,:);
-        %            %
-        avg_mats(:,:,a) = nansum2(data .* aw, 3) ./ nansum2(aw,3);
-    end
-else
-    fprintf('File %s not found\n', fullpath)
 end
+
+
 end
+
