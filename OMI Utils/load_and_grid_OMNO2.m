@@ -115,7 +115,7 @@ parfor d=datenum(start_date):datenum(end_date)
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
         Data(s) = read_fields(Data(s), hi, 1, data_fields);
         %OMI(s) = add2grid_DOMINO(Data(s),OMI(s),reslat,reslon,[lonmin, lonmax],[latmin, latmax]);
-        GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn);
+        GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn,DEBUG_LEVEL);
     end
 
     if DEBUG_LEVEL > 2; fprintf('W%d: Adding lat/lon to GC\n',t.ID); end
@@ -167,7 +167,7 @@ function [loncorn, latcorn] = grid_corners(lonres, latres)
     [loncorn, latcorn] = meshgrid(loncorn, latcorn);
 end
 
-function GC = grid_to_gc(Data, GC, gloncorn, glatcorn)
+function GC = grid_to_gc(Data, GC, gloncorn, glatcorn, DEBUG_LEVEL)
 %[gloncorn, glatcorn] = geos_chem_corners();
 
 sz = size(gloncorn)-1;
@@ -262,15 +262,15 @@ fprintf('\t Time for one file = %f\n',toc(tval));
 end
 
 function Data = calc_pixel_area(Data)
-Lon1 = Data.Loncorn(:,:,1);
-Lon2 = Data.Loncorn(:,:,2);
-Lon3 = Data.Loncorn(:,:,3);
-Lon4 = Data.Loncorn(:,:,4);
+Lon1 = squeeze(Data.Loncorn(1,:,:));
+Lon2 = squeeze(Data.Loncorn(2,:,:));
+Lon3 = squeeze(Data.Loncorn(3,:,:));
+Lon4 = squeeze(Data.Loncorn(4,:,:));
 
-Lat1 = Data.Latcorn(:,:,1);
-Lat2 = Data.Latcorn(:,:,2);
-Lat3 = Data.Latcorn(:,:,3);
-Lat4 = Data.Latcorn(:,:,4);
+Lat1 = squeeze(Data.Latcorn(1,:,:));
+Lat2 = squeeze(Data.Latcorn(2,:,:));
+Lat3 = squeeze(Data.Latcorn(3,:,:));
+Lat4 = squeeze(Data.Latcorn(4,:,:));
 
 Data.Areaweight = nan(size(Data.Longitude));
 
