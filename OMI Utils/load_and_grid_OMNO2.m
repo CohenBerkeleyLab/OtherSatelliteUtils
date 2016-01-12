@@ -6,7 +6,7 @@ function [  ] = load_and_grid_OMNO2( start_date, end_date )
 %   be important if you want to use a finer gridding resolution).
 
 E = JLLErrors;
-DEBUG_LEVEL = 2;
+DEBUG_LEVEL = 4;
 
 global onCluster
 if isempty(onCluster)
@@ -15,11 +15,14 @@ end
 
 if onCluster
     omno2_path = '/global/home/users/laughner/myscratch/SAT/OMI/OMNO2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/0.25x0.25';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/0.25x0.25-avg';
 else
     omno2_path = '/Volumes/share-sat/SAT/OMI/OMNO2';
     save_path = '/Volumes/share-sat/SAT/OMI/OMNO2/MatFiles';
 end
+
+% Existing files must be more recent than this to be considered complete
+min_date = '09-Jan-2016 12:00:00';
 
 % These should be nx2 cell arrays; the first column lists the dataset name
 % in the HDFv5 file, the second what you want it to be called in the Data
@@ -68,9 +71,22 @@ lon = loncorn(1:end-1,1:end-1) + xres/2;
 latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
 
-for d=datenum(start_date):datenum(end_date)
-    if DEBUG_LEVEL > 0; fprintf('Loading/gridding data for %s\n',datestr(d)); end
+parfor d=datenum(start_date):datenum(end_date)
+    t = getCurrentTask();
+%    t.ID = 0;
+    if DEBUG_LEVEL > 0; fprintf('W%d: Loading/gridding data for %s\n',t.ID,datestr(d)); end
 
+    % Skip this day if the file has already been created and is new enough
+    save_name = sprintf('OMI_OMNO2_%04d%02d%02d.mat',year(d),month(d),day(d));
+    if exist(fullfile(save_path, save_name),'file')
+        F = dir(fullfile(save_path, save_name));
+        if F.datenum > datenum(min_date)
+            fprintf('W%d: Skipping %s, already complete\n',t.ID,save_name);
+            continue
+        end
+    end
+
+    if DEBUG_LEVEL > 2; fprintf('W%d: Findings files for %s\n',t.ID,datestr(d)); end
     % OMNO2 data should be organized in subfolders by year and month
     full_path = fullfile(omno2_path, sprintf('%04d',year(d)), sprintf('%02d',month(d)));
     file_pat = sprintf('OMI-Aura_L2-OMNO2_%04dm%02d%02d*.he5',year(d),month(d),day(d));
@@ -78,6 +94,7 @@ for d=datenum(start_date):datenum(end_date)
     Data = make_empty_struct_from_cell(all_struct_fields);
     Data = repmat(Data,1,numel(F));
     
+    if DEBUG_LEVEL > 2; fprintf('W%d: Initializing GC structure\n', t.ID); end
     omi_mat = nan(size(loncorn)-1);
     omi_cell = cell(size(loncorn)-1);
     GC = struct('AmfTrop', omi_mat, 'CloudFraction', omi_mat, 'CloudPressure', omi_mat, 'SlantColumnAmountNO2', omi_mat,...
@@ -92,7 +109,7 @@ for d=datenum(start_date):datenum(end_date)
     %reslat = 2; reslon = 2.5;
     
     for s=1:numel(F)
-        if DEBUG_LEVEL > 1; fprintf('\tHandling file %d of %d\n',s,numel(F)); end
+        if DEBUG_LEVEL > 1; fprintf('\t W%d: Handling file %d of %d\n',t.ID,s,numel(F)); end
         hi = h5info(fullfile(full_path, F(s).name));
         Data(s).Filename = F(s).name;
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
@@ -101,22 +118,42 @@ for d=datenum(start_date):datenum(end_date)
         GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn);
     end
 
+    if DEBUG_LEVEL > 2; fprintf('W%d: Adding lat/lon to GC\n',t.ID); end
     for s=1:numel(GC)
         % Add these now so that grid_to_gc doesn't try to grid them
         GC(s).Longitude = lon;
         GC(s).Latitude = lat;
     end
 
+    % Average over the days' files to get a single day's data
+    if DEBUG_LEVEL > 2; fprintf('W%d: Averaging GC structure\n',t.ID); end
+    GC_avg = struct(GC(1));
+    GC_avg = rmfield(GC_avg,'Areaweight');
+    fns = fieldnames(GC_avg);
+    aw = cat(3,GC.Areaweight);
+    if DEBUG_LEVEL > 3; fprintf('W%d: Percent nans areaweight = %.4f\n', t.ID, sum(isnan(aw(:)))/numel(aw)*100); end
+    total_aw = nansum2(aw,3);
+    if DEBUG_LEVEL > 3; fprintf('W%d: Percent nans total areaweight = %.4f\n', t.ID, sum(isnan(total_aw(:)))/numel(total_aw)*100); end
+    for f=1:numel(fns)
+        if DEBUG_LEVEL > 3; fprintf('\tW%d: Avg. field %s\n',t.ID,fns{f}); end
+        if ~iscell(GC_avg.(fns{f}))
+            GC_avg.(fns{f}) = nansum2(cat(3, GC.(fns{f})) .* aw, 3) ./ total_aw;
+        else
+            GC_avg = rmfield(GC_avg, fns{f});
+        end
+    end
+
     save_name = sprintf('OMI_OMNO2_%04d%02d%02d.mat',year(d),month(d),day(d));
-    saveData(fullfile(save_path,save_name),Data,GC);
+    if DEBUG_LEVEL > 0; fprintf('W%d: Saving file %s\n', t.ID, fullfile(save_path, save_name)); end
+    saveData(fullfile(save_path,save_name),GC_avg);
 
 end
 
 
 end
 
-function saveData(filename,Data, GC)
-    save(filename,'GC','Data','-v7.3')
+function saveData(filename,GC_avg)
+    save(filename,'GC_avg','-v7.3')
 end
 
 function [loncorn, latcorn] = grid_corners(lonres, latres)
@@ -149,7 +186,9 @@ extreme_vcd = Data.ColumnAmountNO2Trop > 1e17;
 
 fns = fieldnames(GC);
 for c=1:numel(fns)
+    if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans before fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
     Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
+    if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans after fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
 end
 
 glon_vec = gloncorn(:,1);
@@ -164,6 +203,7 @@ for a=1:numel(Data.Longitude)
     if Data.Longitude(a) < -200 || Data.Latitude(a) < -200 || isnan(Data.Longitude(a)) || isnan(Data.Latitude(a))
         % Fill values are ~1x10^-30, this will skip any pixels with
         % fill values for coordinates
+        if DEBUG_LEVEL > 3; fprintf('Skipping pixel in %s b/c lat/lon is fill\n',Data.Filename); end
         continue
     end
     xx = Data.Longitude(a) >= glon_vec(1:end-1) & Data.Longitude(a) < glon_vec(2:end);

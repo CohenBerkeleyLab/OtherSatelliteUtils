@@ -15,7 +15,7 @@ end
 
 if onCluster
     domino_path = '/global/home/users/laughner/myscratch/SAT/OMI/DOMINOv2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/0.25x0.25';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/0.25x0.25-avg';
 else
     domino_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0';
     save_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0/MatFiles';
@@ -72,6 +72,17 @@ lat = latcorn(1:end-1,1:end-1) + yres/2;
 parfor d=datenum(start_date):datenum(end_date)
     if DEBUG_LEVEL > 0; fprintf('Loading/gridding data for %s\n',datestr(d)); end
 
+    % Skip this day if the file has already been created and is new enough
+    save_name = sprintf('OMI_DOMINO_%04d%02d%02d.mat',year(d),month(d),day(d));
+    if exist(fullfile(save_path, save_name),'file')
+        F = dir(fullfile(save_path, save_name));
+        if F.datenum > datenum(min_date)
+            fprintf('Skipping %s, already complete\n',save_name);
+            continue
+        end
+    end
+
+
     % DOMINO data should be organized in subfolders by year and month
     full_path = fullfile(domino_path, sprintf('%04d',year(d)), sprintf('%02d',month(d)));
     file_pat = sprintf('OMI-Aura_L2-OMDOMINO_%04dm%02d%02d*.he5',year(d),month(d),day(d));
@@ -107,18 +118,31 @@ parfor d=datenum(start_date):datenum(end_date)
         % Add these now so that grid_to_gc doesn't try to grid them.
         GC(s).Longitude = lon;
         GC(s).Latitude = lat;
-    end    
+    end  
+
+    % Average over the days' files to get a single day's data
+    GC_avg = struct(GC(1));
+    GC_avg = rmfield(GC_avg,'Areaweight');
+    fns = fieldnames(GC_avg);
+    aw = cat(3,GC.Areaweight);
+    total_aw = nansum2(aw,3);
+    for f=1:numel(fns)
+        if ~iscell(GC_avg.(fns{f}))
+            GC_avg.(fns{f}) = nansum2(cat(3, GC.(fns{f})) .* aw, 3) ./ total_aw;
+        else
+            GC_avg = rmfield(GC_avg, fns{f});
+        end
+    end 
 
     save_name = sprintf('OMI_DOMINO_%04d%02d%02d.mat',year(d),month(d),day(d));
-    saveData(fullfile(save_path,save_name),Data,GC);
-
+    saveData(fullfile(save_path,save_name),GC_avg);  
 end
 
 
 end
 
-function saveData(filename,Data, GC)
-    save(filename,'GC','Data','-v7.3')
+function saveData(filename, GC_avg)
+    save(filename,'GC_avg','-v7.3')
 end
 
 function [loncorn, latcorn] = grid_corners(lonres, latres)
