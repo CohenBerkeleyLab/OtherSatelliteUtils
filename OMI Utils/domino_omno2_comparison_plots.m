@@ -1,4 +1,4 @@
-function [  ] = domino_omno2_comparison_plots( files )
+function [  ] = domino_omno2_comparison_plots( domino_dir, omno2_dir, fields_to_plot )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 
@@ -6,40 +6,62 @@ function [  ] = domino_omno2_comparison_plots( files )
 %%%%% INPUT CHECKING %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 
-if ~iscellstr(files)
-    error('domino_omno2_comparison_plots:bad_input','The input "files" must be a cell array of filenames as strings');
+if ~ischar(domino_dir) || ~ischar(omno2_dir) || ~exist(domino_dir, 'dir') || ~exist(omno2_dir, 'dir')
+    error('domino_omno2_comparison_plots:bad_input','The inputs must be a directories given as strings');
 end
+if ~iscellstr(fields_to_plot) || size(fields_to_plot,2) ~= 2
+    error('domino_omno2_comparison_plots:bad_input','fields_to_plot must be an n-by-2 cell array of strings');
+end
+
+% to be implemented later if necessary: use to restrict data to given time
+% frame.
+% if ~exist('start_date','var')
+%     start_date = datestr(0,'yyyymmdd');
+% else
+%     start_date = datestr(start_date,'yyyymmdd');
+% end
+% 
+% if ~exist('end_date','var')
+%     end_date = datestr(0,'yyyymmdd');
+% else
+%     end_date = datestr(end_date,'yyyymmdd');
+% end
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% DATA LOADING %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-% The files should all contain two variables: DOMINO and OMNO2, both of
-% which will be structures with the respective variables to compare as the
-% fields. These will need to be concatenated along the third dimension, as
-% the function that put them together can be split up in time to make the
-% computation manageable.
+% Find all .mat files in the directories and load each one.
+domino_files = dir(fullfile(domino_dir,'*.mat'));
+omno2_files = dir(fullfile(omno2_dir,'*.mat'));
 
-D(numel(files)).DOMINO = struct;
-D(numel(files)).OMNO2 = struct;
+nfields = size(fields_to_plot,1);
+fns_domino = fields_to_plot(:,1);
+fns_omno2 = fields_to_plot(:,2);
 
-for a = 1:numel(files)
-    D(a) = load(files{a});
+% Each file will contain the variable GC_avg, which in turn has 
+
+DOMINO = nan(1440, 720, numel(domino_files), nfields);
+OMNO2 = nan(1440, 720, numel(omno2_files), nfields);
+
+parfor a = 1:numel(domino_files)
+    F_D = load(fullfile(domino_dir, domino_files(a).name));
+    for f = 1:nfields
+        DOMINO(:,:,a,f) = F_D.GC_avg.(fns_domino{f});
+    end
+    F_O = load(fullfile(omno2_dir, omno2_files(a).name));
+    for f = 1:nfields
+        OMNO2(:,:,a,f) = F_O.GC_avg.(fns_omno2{f});
+    end
 end
 
-fns_domino = fieldnames(D(1).DOMINO);
-fns_omno2 = fieldnames(D(1).OMNO2);
+
 
 if numel(fns_domino) ~= numel(fns_omno2)
     error('domino_omno2_comparison_plots:bad_data','The DOMINO and OMNO2 variables have a different number of fields');
 end
 
 nfields = numel(fns_domino);
-
-for a = 1:numel(fns_domino)
-    DOMINO.(fns_domino{a}) = cat(3, D.DOMINO.(fns_domino{a}));
-    OMNO2.(fns_omno2{a}) = cat(3, D.OMNO2.(fns_domino{a}));
-end
 
 % Now actually go through and for each lat/lon box and each variable,
 % calculate the slope, intercept, R2, and std. deviations of the OMNO2
@@ -56,8 +78,8 @@ w=warning('off','all');
 for a=1:nlons
     for b=1:nlats
         for f=1:nfields
-            domino_data = squeeze(DOMINO.(fns_domino{f})(a,b,:));
-            omno2_data = squeeze(OMNO2.(fns_omno2{f})(a,b,:));
+            domino_data = squeeze(DOMINO(a,b,:,f));
+            omno2_data = squeeze(OMNO2(a,b,:,f));
             [~,~,~,L] = calc_fit_line(domino_data, omno2_data, 'regression', 'rma');
             slopes(a,b,f) = L.P(1);
             intercepts(a,b,f) = L.P(2);
