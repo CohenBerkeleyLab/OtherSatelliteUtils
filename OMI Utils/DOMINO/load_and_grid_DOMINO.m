@@ -276,8 +276,9 @@ for f=1:size(field_names,1)
     
     
     Data.(field_names{f,2}) = double(Data.(field_names{f,2}));
-    Data.(field_names{f,2}) = (double(h5read(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}))) - offset) * scalefactor;
+    Data.(field_names{f,2}) = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1})));
     Data.(field_names{f,2})(Data.(field_names{f,2}) == fillval) = nan;
+    Data.(field_names{f,2}) = (Data.(field_names{f,2}) - offset) * scalefactor;
 end
 end
 

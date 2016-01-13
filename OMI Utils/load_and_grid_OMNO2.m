@@ -6,7 +6,7 @@ function [  ] = load_and_grid_OMNO2( start_date, end_date )
 %   be important if you want to use a finer gridding resolution).
 
 E = JLLErrors;
-DEBUG_LEVEL = 4;
+DEBUG_LEVEL = 2;
 
 global onCluster
 if isempty(onCluster)
@@ -18,7 +18,7 @@ if onCluster
     save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/0.25x0.25-avg';
 else
     omno2_path = '/Volumes/share-sat/SAT/OMI/OMNO2';
-    save_path = '/Volumes/share-sat/SAT/OMI/OMNO2/MatFiles';
+    save_path = '/Volumes/share2/USERS/LaughnerJ/DOMINO-OMNO2_comparision/OMNO2/0.25x0.25';
 end
 
 % Existing files must be more recent than this to be considered complete
@@ -71,9 +71,9 @@ lon = loncorn(1:end-1,1:end-1) + xres/2;
 latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
 
-parfor d=datenum(start_date):datenum(end_date)
-    t = getCurrentTask();
-%    t.ID = 0;
+for d=datenum(start_date):datenum(end_date)
+%    t = getCurrentTask();
+    t.ID = 0;
     if DEBUG_LEVEL > 0; fprintf('W%d: Loading/gridding data for %s\n',t.ID,datestr(d)); end
 
     % Skip this day if the file has already been created and is new enough
@@ -185,11 +185,11 @@ negvcds = Data.ColumnAmountNO2Trop < 0;
 extreme_vcd = Data.ColumnAmountNO2Trop > 1e17;
 
 fns = fieldnames(GC);
-for c=1:numel(fns)
-    if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans before fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
-    Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
-    if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans after fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
-end
+% for c=1:numel(fns)
+%     if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans before fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
+%     Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
+%     if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans after fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
+% end
 
 glon_vec = gloncorn(:,1);
 glat_vec = glatcorn(1,:);
@@ -292,8 +292,9 @@ for f=1:size(field_names,1)
     
     
     Data.(field_names{f,2}) = double(Data.(field_names{f,2}));
-    Data.(field_names{f,2}) = (double(h5read(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1}))) - offset) * scalefactor;
+    Data.(field_names{f,2}) = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,gnum ,field_names{f,1})));
     Data.(field_names{f,2})(Data.(field_names{f,2}) == fillval) = nan;
+    Data.(field_names{f,2}) = (Data.(field_names{f,2}) - offset) * scalefactor;
 end
 end
 
