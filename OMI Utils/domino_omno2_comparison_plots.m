@@ -1,4 +1,4 @@
-function [  ] = domino_omno2_comparison_plots( product1, product2, fields_to_plot )
+function [  ] = domino_omno2_comparison_plots( product1, product2 )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 
@@ -26,8 +26,16 @@ if strcmpi(product1,'behr')
     product2 = 'behr';
 end
 
-product1_dir = set_dir(product1);
-product2_dir = set_dir(product2);
+[product1_dir, product1_fields] = set_product(product1);
+[product2_dir, product2_fields] = set_product(product2);
+
+if numel(product2_fields) ~= numel(product1_fields)
+    error('domino_omno2_comparison_plots:different_nfields','The two products have different numbers of fields, remember to fill the cell arrays with NaN (see comments in subfunction set_product');
+end
+
+xx = ~iscellcontents(product1_fields, 'isnan') & ~iscellcontents(product2_fields, 'isnan');
+product1_fields = product1_fields(xx);
+product2_fields = product2_fields(xx);
 
 % to be implemented later if necessary: use to restrict data to given time
 % frame.
@@ -53,9 +61,8 @@ save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO-OMNO2-
 p1_files = dir(fullfile(product1_dir,'*.mat'));
 p2_files = dir(fullfile(product2_dir,'*.mat'));
 
-nfields = size(fields_to_plot,1);
-fns1 = fields_to_plot(:,1);
-fns2 = fields_to_plot(:,2);
+nfields = numel(product1_fields);
+
 
 % Each file will contain the variable GC_avg, which in turn has all the averaged
 % fields in it.
@@ -81,7 +88,7 @@ parfor a = 1:numel(p1_files)
         if numel(xx) ~= size(F1.GC_avg.Longitude,1) || numel(yy) ~= size(F1.GC_avg.Latitude,2)
             error('domino_omno2_comparison_plots:inconsistent_coordinates','The dimensions of the matrices in product 1 are different in different files');
         end
-        Ptmp(:,:,f) = F1.GC_avg.(fns1{f})(xx,yy);
+        Ptmp(:,:,f) = F1.GC_avg.(product1_fields{f})(xx,yy);
     end
     P1(:,:,a,:) = P_tmp;
     
@@ -91,18 +98,11 @@ parfor a = 1:numel(p1_files)
         if sum(xx) ~= size(F2.GC_avg.Longitude,1) || sum(yy) ~= size(F2.GC_avg.Latitude,2)
             error('domino_omno2_comparison_plots:inconsistent_coordinates','The dimensions of the matrices in product 2 are different in different files');
         end
-        Ptmp(:,:,f) = F2.GC_avg.(fns2{f})(xx,yy);
+        Ptmp(:,:,f) = F2.GC_avg.(product2_fields{f})(xx,yy);
     end
     P2(:,:,a,:) = Ptmp;
 end
 
-
-
-if numel(fns1) ~= numel(fns2)
-    error('domino_omno2_comparison_plots:bad_data','The P1 and P2 variables have a different number of fields');
-end
-
-nfields = numel(fns1);
 
 % Now actually go through and for each lat/lon box and each variable,
 % calculate the slope, intercept, R2, and std. deviations of the P2
@@ -152,11 +152,15 @@ while exist(fullfile(save_path, savename),'file')
     i=i+1;
     savename = sprintf(savename_spec, product1, product2, i);
 end
-save(fullfile(save_path, savename), 'slopes', 'intercepts', 'r2s', 'stddevms', 'stddevbs', 'fields_to_plot');
+save(fullfile(save_path, savename), 'slopes', 'intercepts', 'r2s', 'stddevms', 'stddevbs', 'product1_fields', 'product2_fields');
 
 end
 
-function p_dir = set_dir(product)
+function [p_dir, p_fields] = set_product(product)
+% Sets both the directory and the fields for each product. Each product
+% must have the same number of fields; if one product does not have an
+% equivalent field (e.g. BEHR does not have stratospheric columns) put a
+% NaN there for that product.
 global onCluster;
 if isempty(onCluster); onCluster = false; end 
 switch product
@@ -166,18 +170,21 @@ switch product
         else
             error('domino_omno2_comparison_plots:not_implemented','Off cluster paths are not defined');
         end
+        p_fields = {'TroposphericVerticalColumn'; 'AirMassFactorTropospheric'; 'AssimilatedStratosphericVerticalColumn'; };
     case 'omno2'
         if onCluster
             p_dir = '/global/scratch/laughner/MATLAB/Data/OMI/OMNO2/0.25x0.25-avg';
         else
             error('domino_omno2_comparison_plots:not_implemented','Off cluster paths are not defined');
         end
+        p_fields = {'ColumnAmountNO2Trop'; 'AmfTrop'; 'ColumnAmountNO2Strat'};
     case 'behr'
         if onCluster
             p_dir = '/global/scratch/laughner/MATLAB/Data/OMI/BEHR/0.25x0.25-avg';
         else
             error('domino_omno2_comparison_plots:not_implemented','Off cluster paths are not defined');
         end
+        p_fields = {'BEHRColumnAmountNO2Trop'; 'BEHRAMFTrop'; NaN};
 end
 end
 
