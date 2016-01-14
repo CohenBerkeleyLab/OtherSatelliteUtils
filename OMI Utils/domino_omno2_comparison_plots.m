@@ -74,22 +74,26 @@ P1 = nan(sum(xx), sum(yy), numel(p1_files), nfields);
 P2 = nan(sum(xx), sum(yy), numel(p2_files), nfields);
 
 parfor a = 1:numel(p1_files)
-    t = getCurrentTask();
-    fprintf('W%d: loading files %s and %s\n', t.ID, p1_files(a).name, p2_files(a).name);
+    fprintf('Loading files %s and %s\n', p1_files(a).name, p2_files(a).name);
     F1 = load(fullfile(product1_dir, p1_files(a).name));
+    Ptmp = nan(sum(xx), sum(yy), nfields);
     for f = 1:nfields
         if numel(xx) ~= size(F1.GC_avg.Longitude,1) || numel(yy) ~= size(F1.GC_avg.Latitude,2)
             error('domino_omno2_comparison_plots:inconsistent_coordinates','The dimensions of the matrices in product 1 are different in different files');
         end
-        P1(:,:,a,f) = F1.GC_avg.(fns1{f})(xx,yy);
+        Ptmp(:,:,f) = F1.GC_avg.(fns1{f})(xx,yy);
     end
+    P1(:,:,a,:) = P_tmp;
+    
     F2 = load(fullfile(product2_dir, p2_files(a).name));
+    Ptmp = nan(sum(xx), sum(yy), nfields);
     for f = 1:nfields
         if sum(xx) ~= size(F2.GC_avg.Longitude,1) || sum(yy) ~= size(F2.GC_avg.Latitude,2)
             error('domino_omno2_comparison_plots:inconsistent_coordinates','The dimensions of the matrices in product 2 are different in different files');
         end
-        P2(:,:,a,f) = F2.GC_avg.(fns2{f})(xx,yy);
+        Ptmp(:,:,f) = F2.GC_avg.(fns2{f})(xx,yy);
     end
+    P2(:,:,a,:) = Ptmp;
 end
 
 
@@ -113,18 +117,30 @@ stddevbs = nan(nlons, nlats, nfields);
 w=warning('off','all');
 parfor a=1:nlons
 %for a=1:nlons
+    P1_slice = P1(a,:,:,:);
+    P2_slice = P2(a,:,:,:);
+    slopes_a = nan(1,nlats,nfields);
+    int_a = nan(1,nlats,nfields);
+    r2_a = nan(1,nlats,nfields);
+    sdm_a = nan(1,nlats,nfields);
+    sdb_a = nan(1,nlats,nfields);
     for b=1:nlats
         for f=1:nfields
-            p1_data = squeeze(P1(a,b,:,f));
-            p2_data = squeeze(P2(a,b,:,f));
+            p1_data = squeeze(P1_slice(1,b,:,f));
+            p2_data = squeeze(P2_slice(1,b,:,f));
             [~,~,~,L] = calc_fit_line(p1_data, p2_data, 'regression', 'rma');
-            slopes(a,b,f) = L.P(1);
-            intercepts(a,b,f) = L.P(2);
-            r2s(a,b,f) = L.R2;
-            stddevms(a,b,f) = L.StdDevM;
-            stddevbs(a,b,f) = L.StdDevB;
+            slopes_a(1,b,f) = L.P(1);
+            int_a(1,b,f) = L.P(2);
+            r2_a(1,b,f) = L.R2;
+            sdm_a(1,b,f) = L.StdDevM;
+            sdb_a(1,b,f) = L.StdDevB;
         end
     end
+    slopes(a,:,:) = slopes_a;
+    intercepts(a,:,:) = int_a;
+    r2s(a,:,:) = r2_a;
+    stddevms(a,:,:) = sdm_a;
+    stddevbs(a,:,:) = sdb_a;
 end
 warning(w);
 
