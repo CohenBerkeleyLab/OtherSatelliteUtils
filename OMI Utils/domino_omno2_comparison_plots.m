@@ -1,4 +1,4 @@
-function [  ] = domino_omno2_comparison_plots( domino_dir, omno2_dir, fields_to_plot )
+function [  ] = domino_omno2_comparison_plots( product1, product2, fields_to_plot )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 
@@ -6,12 +6,28 @@ function [  ] = domino_omno2_comparison_plots( domino_dir, omno2_dir, fields_to_
 %%%%% INPUT CHECKING %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 
-if ~ischar(domino_dir) || ~ischar(omno2_dir) || ~exist(domino_dir, 'dir') || ~exist(omno2_dir, 'dir')
-    error('domino_omno2_comparison_plots:bad_input','The inputs must be a directories given as strings');
+product1 = lower(product1);
+product2 = lower(product2);
+
+allowed_products = {'domino','omno2','behr'};
+
+if ~ismember(product1, allowed_products) || ~ismember(product2, allowed_products)
+    error('domino_omno2_comparison_plots:bad_input','The allowed products are %s.',strjoin(allowed_products, ', '));
 end
+
 if ~iscellstr(fields_to_plot) || size(fields_to_plot,2) ~= 2
     error('domino_omno2_comparison_plots:bad_input','fields_to_plot must be an n-by-2 cell array of strings');
 end
+
+% Always make BEHR the second product - this'll make it easier to match the smaller lat/lon array
+% down the road
+if strcmpi(product1,'behr')
+    product1 = product2;
+    product2 = 'behr';
+end
+
+product1_dir = set_dir(product1);
+product2_dir = set_dir(product2);
 
 % to be implemented later if necessary: use to restrict data to given time
 % frame.
@@ -27,45 +43,66 @@ end
 %     end_date = datestr(end_date,'yyyymmdd');
 % end
 
+save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO-OMNO2-Comparison';
+
 %%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% DATA LOADING %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 % Find all .mat files in the directories and load each one.
-domino_files = dir(fullfile(domino_dir,'*.mat'));
-omno2_files = dir(fullfile(omno2_dir,'*.mat'));
+p1_files = dir(fullfile(product1_dir,'*.mat'));
+p2_files = dir(fullfile(product2_dir,'*.mat'));
 
 nfields = size(fields_to_plot,1);
-fns_domino = fields_to_plot(:,1);
-fns_omno2 = fields_to_plot(:,2);
+fns1 = fields_to_plot(:,1);
+fns2 = fields_to_plot(:,2);
 
-% Each file will contain the variable GC_avg, which in turn has 
+% Each file will contain the variable GC_avg, which in turn has all the averaged
+% fields in it.
 
-DOMINO = nan(1440, 720, numel(domino_files), nfields);
-OMNO2 = nan(1440, 720, numel(omno2_files), nfields);
+% We'll need to load the first files to determine how to line up the 
+% matrices if using the BEHR product.
 
-parfor a = 1:numel(domino_files)
-    F_D = load(fullfile(domino_dir, domino_files(a).name));
+F1 = load(fullfile(product1_dir, p1_files(1).name));
+F2 = load(fullfile(product2_dir, p2_files(1).name));
+
+[xx,yy] = match_geo(F1,F2);
+
+clear('F1','F2');
+
+P1 = nan(sum(xx), sum(yy), numel(p1_files), nfields);
+P2 = nan(sum(xx), sum(yy), numel(p2_files), nfields);
+
+parfor a = 1:numel(p1_files)
+    t = getCurrentTask();
+    fprintf('W%d: loading files %s and %s\n', t.ID, p1_files(a).name, p2_files(a).name);
+    F1 = load(fullfile(product1_dir, p1_files(a).name));
     for f = 1:nfields
-        DOMINO(:,:,a,f) = F_D.GC_avg.(fns_domino{f});
+        if numel(xx) ~= size(F1.GC_avg.Longitude,1) || numel(yy) ~= size(F1.GC_avg.Latitude,2)
+            error('domino_omno2_comparison_plots:inconsistent_coordinates','The dimensions of the matrices in product 1 are different in different files');
+        end
+        P1(:,:,a,f) = F1.GC_avg.(fns1{f})(xx,yy);
     end
-    F_O = load(fullfile(omno2_dir, omno2_files(a).name));
+    F2 = load(fullfile(product2_dir, p2_files(a).name));
     for f = 1:nfields
-        OMNO2(:,:,a,f) = F_O.GC_avg.(fns_omno2{f});
+        if sum(xx) ~= size(F2.GC_avg.Longitude,1) || sum(yy) ~= size(F2.GC_avg.Latitude,2)
+            error('domino_omno2_comparison_plots:inconsistent_coordinates','The dimensions of the matrices in product 2 are different in different files');
+        end
+        P2(:,:,a,f) = F2.GC_avg.(fns2{f})(xx,yy);
     end
 end
 
 
 
-if numel(fns_domino) ~= numel(fns_omno2)
-    error('domino_omno2_comparison_plots:bad_data','The DOMINO and OMNO2 variables have a different number of fields');
+if numel(fns1) ~= numel(fns2)
+    error('domino_omno2_comparison_plots:bad_data','The P1 and P2 variables have a different number of fields');
 end
 
-nfields = numel(fns_domino);
+nfields = numel(fns1);
 
 % Now actually go through and for each lat/lon box and each variable,
-% calculate the slope, intercept, R2, and std. deviations of the OMNO2
-% variables vs. the DOMINO variables
+% calculate the slope, intercept, R2, and std. deviations of the P2
+% variables vs. the P1 variables
 
 slopes = nan(nlons, nlats, nfields);
 intercepts = nan(nlons, nlats, nfields);
@@ -74,13 +111,13 @@ stddevms = nan(nlons, nlats, nfields);
 stddevbs = nan(nlons, nlats, nfields);
 
 w=warning('off','all');
-%parfor a=1:nlons
-for a=1:nlons
+parfor a=1:nlons
+%for a=1:nlons
     for b=1:nlats
         for f=1:nfields
-            domino_data = squeeze(DOMINO(a,b,:,f));
-            omno2_data = squeeze(OMNO2(a,b,:,f));
-            [~,~,~,L] = calc_fit_line(domino_data, omno2_data, 'regression', 'rma');
+            p1_data = squeeze(P1(a,b,:,f));
+            p2_data = squeeze(P2(a,b,:,f));
+            [~,~,~,L] = calc_fit_line(p1_data, p2_data, 'regression', 'rma');
             slopes(a,b,f) = L.P(1);
             intercepts(a,b,f) = L.P(2);
             r2s(a,b,f) = L.R2;
@@ -92,22 +129,53 @@ end
 warning(w);
 
 % Finally, save the results. Do not overwrite existing files.
-savename_spec = 'domino-omno2_results-%d.mat';
+savename_spec = '%s-%s_results-%d.mat';
 i=0;
-savename = sprintf(savename_spec, i);
+savename = sprintf(savename_spec, product1, product2, i);
 while exist(fullfile(save_path, savename),'file')
     i=i+1;
-    savename = sprintf(savename_spec, i);
+    savename = sprintf(savename_spec, product1, product2, i);
 end
 save(fullfile(save_path, savename), 'slopes', 'intercepts', 'r2s', 'stddevms', 'stddevbs', 'fields_to_plot');
 
-% If the user wants to save the averaged matrices, include those as a
-% separate file. Do some variable rearraging to make it a little more
-% obvious what everything is.
-if save_daily_avg_mats
-    
 end
 
-
+function p_dir = set_dir(product)
+global onCluster;
+if isempty(onCluster); onCluster = false; end 
+switch product
+    case 'domino'
+        if onCluster
+            p_dir = '/global/scratch/laughner/MATLAB/Data/OMI/DOMINO/0.25x0.25-avg';
+        else
+            error('domino_omno2_comparison_plots:not_implemented','Off cluster paths are not defined');
+        end
+    case 'omno2'
+        if onCluster
+            p_dir = '/global/scratch/laughner/MATLAB/Data/OMI/OMNO2/0.25x0.25-avg';
+        else
+            error('domino_omno2_comparison_plots:not_implemented','Off cluster paths are not defined');
+        end
+    case 'behr'
+        if onCluster
+            p_dir = '/global/scratch/laughner/MATLAB/Data/OMI/BEHR/0.25x0.25-avg';
+        else
+            error('domino_omno2_comparison_plots:not_implemented','Off cluster paths are not defined');
+        end
+end
 end
 
+function [xx,yy] = match_geo(F1, F2)
+% F2 must contain the smaller matrices
+lon1 = F1.GC_avg.Longitude(:,1);
+lat1 = F1.GC_avg.Latitude(1,:);
+lon2 = F2.GC_avg.Longitude(:,1);
+lat2 = F2.GC_avg.Latitude(1,:);
+
+xx = ismember(lon1, lon2);
+yy = ismember(lat1, lat2);
+
+if sum(xx) ~= numel(lon2) || sum(yy) ~= numel(lat2)
+    error('domino_omno2_comparison_plots:grid_mismatch','Lat/lon grid mismatch. It is assumed that the lat/lon coordinates in product2 are a subset of those in product1, and this is not true.')
+end
+end

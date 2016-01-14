@@ -71,9 +71,9 @@ lon = loncorn(1:end-1,1:end-1) + xres/2;
 latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
 
-for d=datenum(start_date):datenum(end_date)
-%    t = getCurrentTask();
-    t.ID = 0;
+parfor d=datenum(start_date):datenum(end_date)
+    t = getCurrentTask();
+%    t.ID = 0;
     if DEBUG_LEVEL > 0; fprintf('W%d: Loading/gridding data for %s\n',t.ID,datestr(d)); end
 
     % Skip this day if the file has already been created and is new enough
@@ -185,11 +185,11 @@ negvcds = Data.ColumnAmountNO2Trop < 0;
 extreme_vcd = Data.ColumnAmountNO2Trop > 1e17;
 
 fns = fieldnames(GC);
-% for c=1:numel(fns)
-%     if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans before fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
-%     Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
-%     if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans after fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
-% end
+for c=1:numel(fns)
+    if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans before fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
+    Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
+    if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans after fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
+end
 
 glon_vec = gloncorn(:,1);
 glat_vec = glatcorn(1,:);
