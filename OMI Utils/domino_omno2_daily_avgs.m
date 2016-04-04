@@ -1,10 +1,16 @@
 function [  ] = domino_omno2_daily_avgs( start_date, end_date )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
+%   Note that this function has now been wrapped into the load_and_grid functions
+%   making it obsolete.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% USER DEFINED VALUES %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+fprintf('Begin function domino_omno2_daily_avgs\n');
+warning('The functionality of this script should be in the various load_and_grid functions. Are you sure you should be using this one?');
+
 
 % Define paths to the gridded files. This should be the path that has two
 % subfolders, DOMINO and OMNO2, which each have under them data organised
@@ -40,6 +46,7 @@ fields_to_plot = {  'TroposphericVerticalColumn', 'ColumnAmountNO2Trop';...
 %%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN FUNCTION %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Main function beginning\n');
 
 % We need to load all the days within the date range given, average the
 % swaths down to a single matrix for that day, and put that average into
@@ -53,6 +60,8 @@ nfields = size(fields_to_plot,1);
 nlons = 360/lonres;
 nlats = 180/latres;
 
+fprintf('Initializing large matrices\n');
+
 daily_domino = nan(nlons,nlats,ndays,nfields);
 daily_omno2 = nan(nlons,nlats,ndays,nfields);
 
@@ -60,8 +69,10 @@ daily_omno2 = nan(nlons,nlats,ndays,nfields);
 % may not actually save time, it depends on if the files system is
 % optimized for parallel reads).
 
-parfor d=1:ndays
-%for d=1:ndays
+fprintf('Starting parfor loop\n');
+%parfor d=1:ndays
+for d=1:ndays
+    fprintf('Loading files for %s\n',datestr(dates(d),'yyyy-mm-dd'));
     tmp_mats_domino = load_and_avg('DOMINO', dates(d), lonres, nlons, latres, nlats, fields_to_plot(:,1), data_path); %#ok<PFBNS>
     tmp_mats_omno2 = load_and_avg('OMNO2', dates(d), lonres, nlons, latres, nlats, fields_to_plot(:,2), data_path);
     for a = 1:nfields
@@ -75,6 +86,7 @@ for a=1:nfields
     OMNO2.(fields_to_plot{a,2}) = daily_omno2(:,:,:,a);
 end
 savename = sprintf('domino-omno2_avgs_%s-%s.mat',datestr(start_date,'yyyymmdd'),datestr(end_date,'yyyymmdd'));
+fprintf('Saving as %s\n',fullfile(save_path,savename));
 save(fullfile(save_path, savename), 'DOMINO', 'OMNO2','-v7.3');
 
 end
@@ -89,15 +101,8 @@ if exist(fullpath,'file')
     D = load(fullpath,'GC');
     aw = cat(3, D.GC.Areaweight);
     
-    % DEBUG ONLY %
-    aw = aw(1:end-1,1:end-1,:);
-    %            %
-    
     for a=1:numel(fns)
         data = cat(3, D.GC.(fns{a}));
-        % DEBUG ONLY %
-        data = data(1:end-1,1:end-1,:);
-        %            %
         avg_mats(:,:,a) = nansum2(data .* aw, 3) ./ nansum2(aw,3);
     end
 else

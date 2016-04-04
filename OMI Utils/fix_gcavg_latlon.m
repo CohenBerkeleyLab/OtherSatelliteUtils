@@ -11,6 +11,8 @@ yres = 180/sz(2);
 lonvec = -180+xres/2:xres:180-xres/2;
 latvec = -90+yres/2:yres:90-yres/2;
 [LON, LAT] = meshgrid(lonvec, latvec);
+LON = LON';
+LAT = LAT';
 
 parfor f=1:numel(F)
     E = load(fullfile(path_in, F(f).name));

@@ -15,7 +15,7 @@ end
 
 if onCluster
     domino_path = '/global/home/users/laughner/myscratch/SAT/OMI/DOMINOv2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/0.25x0.25-avg';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/2.5x2.0-avg-newweight';
 else
     domino_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0';
     save_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0/MatFiles';
@@ -62,15 +62,24 @@ end
 
 all_struct_fields = cat(1,geo_fields(:,2),data_fields(:,2));
 
-xres = 0.25; yres = 0.25;
-[loncorn, latcorn] = grid_corners(xres, yres);
+xres = 2.5; yres = 2.0;
+%[loncorn, latcorn] = grid_corners(xres, yres);
+[loncorn, latcorn] = geos_chem_corners;
 loncorn = loncorn';
 lon = loncorn(1:end-1,1:end-1) + xres/2;
+loncorn(end,:) = 181;
 latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
+latcorn(:,end) = 91;
+
+min_date = today;
 
 parfor d=datenum(start_date):datenum(end_date)
-    if DEBUG_LEVEL > 0; fprintf('Loading/gridding data for %s\n',datestr(d)); end
+    t = getCurrentTask;
+    if isempty(t)
+        t.ID = 0;
+    end
+    if DEBUG_LEVEL > 0; fprintf('W%d: Loading/gridding data for %s\n',t.ID,datestr(d)); end
 
     % Skip this day if the file has already been created and is new enough
     save_name = sprintf('OMI_DOMINO_%04d%02d%02d.mat',year(d),month(d),day(d));
@@ -105,7 +114,7 @@ parfor d=datenum(start_date):datenum(end_date)
     %reslat = 2; reslon = 2.5;
     
     for s=1:numel(F)
-        if DEBUG_LEVEL > 1; fprintf('\tHandling file %d of %d\n',s,numel(F)); end
+        if DEBUG_LEVEL > 1; fprintf('\tW%d: Handling file %d of %d\n',t.ID,s,numel(F)); end
         hi = h5info(fullfile(full_path, F(s).name));
         Data(s).Filename = F(s).name;
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
@@ -114,11 +123,6 @@ parfor d=datenum(start_date):datenum(end_date)
         GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn);
     end
     
-    for s=1:numel(GC)
-        % Add these now so that grid_to_gc doesn't try to grid them.
-        GC(s).Longitude = lon;
-        GC(s).Latitude = lat;
-    end  
 
     % Average over the days' files to get a single day's data
     GC_avg = struct(GC(1));
@@ -133,8 +137,14 @@ parfor d=datenum(start_date):datenum(end_date)
             GC_avg = rmfield(GC_avg, fns{f});
         end
     end 
+    
+    % Add these now so that they are not changed into NaNs by multiplying with areaweight,
+    % or are attempted to be gridded.
+    GC_avg.Longitude = lon;
+    GC_avg.Latitude = lat;
+    GC_avg.Weight = total_aw;
 
-    save_name = sprintf('OMI_DOMINO_%04d%02d%02d.mat',year(d),month(d),day(d));
+    save_name = sprintf('OMI_DOMINO_%04d%02d%02d-newweight.mat',year(d),month(d),day(d));
     saveData(fullfile(save_path,save_name),GC_avg);  
 end
 
@@ -161,6 +171,12 @@ function GC = grid_to_gc(Data, GC, gloncorn, glatcorn)
 
 sz = size(gloncorn)-1;
 
+for i=1:size(Data.Loncorn,1)
+    for j=1:size(Data.Loncorn,2)
+        [Data.Loncorn(i,j,:), Data.Latcorn(i,j,:)] = uncross_corners(Data.Loncorn(i,j,:), Data.Latcorn(i,j,:));
+    end
+end
+
 Data = calc_pixel_area(Data);
 TotalAreaweight = zeros(size(GC.TroposphericVerticalColumn));
 
@@ -179,12 +195,25 @@ end
 glon_vec = gloncorn(:,1);
 glat_vec = glatcorn(1,:);
 
+earth_ellip = referenceEllipsoid('wgs84','kilometer');
+gc_area = nan(numel(glon_vec)-1, numel(glat_vec)-1);
+for i=1:(numel(glon_vec)-1)
+    for j=1:(numel(glat_vec)-1)
+        xall = [glon_vec(i), glon_vec(i), glon_vec(i+1), glon_vec(i+1), glon_vec(i)];
+        yall = [glat_vec(j), glat_vec(j+1), glat_vec(j+1), glat_vec(j), glat_vec(j)];
+        [xall, yall] = poly2cw(xall, yall);
+        gc_area(i,j) = areaint(yall, xall, earth_ellip);
+    end
+end
+
 fprintf('Starting loop\n');
 tval = tic;
 for a=1:numel(Data.Longitude)
     %if mod(a,100) == 1
      %   fprintf('Pixel %d: time elapsed = %f\n',a,toc(tval));
     %end
+    [ax, ay] = ind2sub(size(Data.Longitude), a);
+    
     if Data.Longitude(a) < -200 || Data.Latitude(a) < -200 || isnan(Data.Longitude(a)) || isnan(Data.Latitude(a))
         % Fill values are ~1x10^-30, this will skip any pixels with
         % fill values for coordinates
@@ -197,13 +226,16 @@ for a=1:numel(Data.Longitude)
     elseif sum(xx) < 1 || sum(yy) < 1
         error('load_and_grid_DOMINO:pixel_assignment_error', 'Pixel %d in %s could not be assigned to a grid cell', a, Data.Filename);
     end
-    TotalAreaweight(xx,yy) = nansum2([TotalAreaweight(xx,yy), Data.Areaweight(a)]);
+    xxf = find(xx); yyf = find(yy);
+    Q = calc_pix_grid_overlap(glon_vec, glat_vec, xxf, yyf, gc_area(xx,yy), squeeze(Data.Loncorn(ax,ay,:)), squeeze(Data.Latcorn(ax,ay,:)), earth_ellip);
+    Weight = Data.Areaweight(a) * Q;
+    TotalAreaweight(xx,yy) = nansum2([TotalAreaweight(xx,yy), Weight]);
     for c=1:numel(fns)
         if iscell(GC.(fns{c}))
            GC.(fns{c}){xx,yy} = cat(1,GC.(fns{c}){xx,yy},Data.(fns{c})(a));
         else
             % The areaweight will be divided out at the end of the loop
-            GC.(fns{c})(xx,yy) = nansum2([GC.(fns{c})(xx,yy), Data.(fns{c})(a) .* Data.Areaweight(a)]);
+            GC.(fns{c})(xx,yy) = nansum2([GC.(fns{c})(xx,yy), Data.(fns{c})(a) .* Weight]);
         end 
     end
 end
@@ -213,6 +245,7 @@ for c=1:numel(fns)
         GC.(fns{c}) = GC.(fns{c}) ./ TotalAreaweight;
     end
 end
+GC.Areaweight = TotalAreaweight;
 fprintf('\t Time for one file = %f\n',toc(tval));
 
 %for a=1:sz(1)
@@ -245,6 +278,79 @@ fprintf('\t Time for one file = %f\n',toc(tval));
 
 end
 
+function Q = calc_pix_grid_overlap(glon_vec, glat_vec, xx, yy, gc_area, pixloncorn, pixlatcorn, earth_ellip)
+% get the grid cell corners
+t = getCurrentTask;
+%t.ID = 0;
+if any(isnan(pixloncorn)) || any(isnan(pixlatcorn)) || any(pixloncorn < -180) || any(pixloncorn > 180) || any(pixlatcorn < -90) || any(pixlatcorn > 90)
+    Q = 0;
+    %Q=-100;
+    return;
+end
+lonc = glon_vec(xx:xx+1);
+latc = glat_vec(yy:yy+1);
+gc_xall = [lonc(1), lonc(1), lonc(2), lonc(2), lonc(1)];
+gc_yall = [latc(1), latc(2), latc(2), latc(1), latc(1)];
+% ensure both are clockwise
+[gc_xall, gc_yall] = poly2cw(gc_xall, gc_yall);
+%[pixloncorn, pixlatcorn] = uncross_corners(pixloncorn, pixlatcorn);
+[pixloncorn, pixlatcorn] = poly2cw(pixloncorn, pixlatcorn);
+% create a polygon that represents the area of overlap and calculate its area
+% in km.
+[xt, yt] = polybool('intersection',gc_xall,gc_yall,pixloncorn,pixlatcorn);
+if isempty(xt) || isempty(yt) || (any(sign(pixloncorn)~=sign(pixloncorn(1))) && any(abs(pixloncorn)>90))
+    % the last test handles issues where a pixel straddles the international
+    % date line. there's better ways to handle it (wrap the pixel corner around
+    % to be the same sign as the GC corners) but I don't feel like doing that atm.
+    Q = 0;
+    %Q=-200;
+    return;
+elseif any(isnan(xt))
+    error('load_and_grid_domino:calc_pix_grid_overlap','W%d: The pixel corners are wrong (%s, %s) at [%d, %d]',t.ID,mat2str(pixloncorn),mat2str(pixlatcorn), xx, yy);
+end
+overlap_area = areaint(yt,xt,earth_ellip);
+Q = overlap_area/gc_area;
+end
+
+function [x,y]= uncross_corners(x,y)
+    m1 = (y(3) - y(2))/(x(3) - x(2));
+    b1 = y(2) - m1*x(2);
+    m2 = (y(4) - y(1))/(x(4) - x(1));
+    b2 = y(1) - m2*x(1);
+    flip_bool = false;
+    if ~isinf(m1) && ~isinf(m2)
+        % As long as neither slope is infinite, solve for the x-coordinate
+        % of the intercept and see if it falls inside the polygon - if so,
+        % the corners need flipped.
+        inpt = (b2-b1)/(m1-m2);
+        if inpt > min(x(2:3)) && inpt < max(x(2:3))
+            flip_bool = true;
+        end
+    elseif isinf(m1) && ~isinf(m2)
+        % If one is infinite, fine the y-coord where the other one is at
+        % it's x-coordinate and do the same test
+        inpt = m2*x(2)+b2;
+        if inpt > min(y(2:3)) && inpt < max(y(2:3))
+            flip_bool = true;
+        end
+    elseif isinf(m2) && ~isinf(m1)
+        inpt = m1*x(1) + b1;
+        if inpt > min(y([1,4])) && inpt < max(y([1,4]))
+            flip_bool = true;
+        end
+        % If both are infinite, they are parallel and the corners do not
+        % need flipped.
+    end
+    if flip_bool
+        tmp = x(4);
+        x(4) = x(3);
+        x(3) = tmp;
+        tmp = y(4);
+        y(4) = y(3);
+        y(3) = tmp;
+    end
+end
+
 function Data = calc_pixel_area(Data)
 Lon1 = Data.Loncorn(:,:,1);
 Lon2 = Data.Loncorn(:,:,2);
@@ -258,10 +364,14 @@ Lat4 = Data.Latcorn(:,:,4);
 
 Data.Areaweight = nan(size(Data.Longitude));
 
+Amin = 312; % 13 km x 24 km
+Amax = 7500; % approximate max seen from BEHR
 for x=1:size(Lon1,1)
     for y=1:size(Lon1,2)
         pixelarea = (m_lldist([Lon1(x,y)-180 Lon2(x,y)-180],[Lat1(x,y) Lat2(x,y)]))*(m_lldist([Lon1(x,y)-180, Lon4(x,y)-180],[Lat1(x,y), Lat4(x,y)]));
-        Data.Areaweight(x,y) = 1/pixelarea;
+        %Data.Areaweight(x,y) = 1/pixelarea;
+        Data.Areaweight(x,y) = 1 - (pixelarea - Amin)/Amax;
+        dum=1;
     end
 end
 end
