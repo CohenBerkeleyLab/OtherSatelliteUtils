@@ -39,7 +39,7 @@ elseif size(Data.Latcorn,1) > 4 || size(Data.Loncorn,1) > 4
 end
     
 
-Dimensions=size(Data.ColumnAmountNO2);
+Dimensions=size(Data.Longitude);
 %swath=d;
 
 x=1:1:Dimensions(1)*Dimensions(2); 
@@ -76,7 +76,7 @@ for x=1:1:Dimensions(1)*Dimensions(2);
     end
 end
 
-OMI = hdf_quadrangle_DOMINO(Data, OMI, maxx, minx, maxy, miny, lCoordLon, lCoordLat, Lon1, Lon2, Lon4, Lat1, Lat2, Lat4);
+%OMI = hdf_quadrangle_DOMINO(Data, OMI, maxx, minx, maxy, miny, lCoordLon, lCoordLat, Lon1, Lon2, Lon4, Lat1, Lat2, Lat4);
 OMI.MapData.LatBdy = latbdy;
 OMI.MapData.LatRes = reslat;
 OMI.MapData.LonBdy = lonbdy;
