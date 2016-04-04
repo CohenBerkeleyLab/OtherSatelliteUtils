@@ -171,6 +171,12 @@ function GC = grid_to_gc(Data, GC, gloncorn, glatcorn)
 
 sz = size(gloncorn)-1;
 
+for i=1:size(Data.Loncorn,1)
+    for j=1:size(Data.Loncorn,2)
+        [Data.Loncorn(i,j,:), Data.Latcorn(i,j,:)] = uncross_corners(Data.Loncorn(i,j,:), Data.Latcorn(i,j,:));
+    end
+end
+
 Data = calc_pixel_area(Data);
 TotalAreaweight = zeros(size(GC.TroposphericVerticalColumn));
 
@@ -287,7 +293,7 @@ gc_xall = [lonc(1), lonc(1), lonc(2), lonc(2), lonc(1)];
 gc_yall = [latc(1), latc(2), latc(2), latc(1), latc(1)];
 % ensure both are clockwise
 [gc_xall, gc_yall] = poly2cw(gc_xall, gc_yall);
-[pixloncorn, pixlatcorn] = uncross_corners(pixloncorn, pixlatcorn);
+%[pixloncorn, pixlatcorn] = uncross_corners(pixloncorn, pixlatcorn);
 [pixloncorn, pixlatcorn] = poly2cw(pixloncorn, pixlatcorn);
 % create a polygon that represents the area of overlap and calculate its area
 % in km.

@@ -22,7 +22,7 @@ else
 end
 
 % Existing files must be more recent than this to be considered complete
-min_date = '2016-03-28';
+min_date = today;
 
 % These should be nx2 cell arrays; the first column lists the dataset name
 % in the HDFv5 file, the second what you want it to be called in the Data
@@ -76,7 +76,9 @@ latcorn(:,end) = 91;
 
 parfor d=datenum(start_date):datenum(end_date)
     t = getCurrentTask();
-%    t.ID = 0;
+    if isempty(t)
+        t.ID = 0;
+    end
     if DEBUG_LEVEL > 0; fprintf('W%d: Loading/gridding data for %s\n',t.ID,datestr(d)); end
 
     % Skip this day if the file has already been created and is new enough
@@ -174,6 +176,10 @@ function GC = grid_to_gc(Data, GC, gloncorn, glatcorn, DEBUG_LEVEL)
 
 sz = size(gloncorn)-1;
 
+for p=1:numel(Data.Longitude)
+    [Data.Loncorn(:,p), Data.Latcorn(:,p)] = uncross_corners(Data.Loncorn(:,p), Data.Latcorn(:,p));
+end
+
 Data = calc_pixel_area(Data);
 TotalAreaweight = zeros(size(GC.ColumnAmountNO2Trop));
 
@@ -246,6 +252,7 @@ for c=1:numel(fns)
         GC.(fns{c}) = GC.(fns{c}) ./ TotalAreaweight;
     end
 end
+GC.Areaweight = TotalAreaweight;
 fprintf('\t Time for one file = %f\n',toc(tval));
 
 %for a=1:sz(1)
@@ -281,7 +288,9 @@ end
 function Q = calc_pix_grid_overlap(glon_vec, glat_vec, xx, yy, gc_area, pixloncorn, pixlatcorn, earth_ellip)
 % get the grid cell corners
 t = getCurrentTask;
-%t.ID = 0;
+if isempty(t)
+    t.ID = 0;
+end
 if any(isnan(pixloncorn)) || any(isnan(pixlatcorn)) || any(pixloncorn < -180) || any(pixloncorn > 180) || any(pixlatcorn < -90) || any(pixlatcorn > 90)
     Q = 0;
     return;
@@ -292,7 +301,8 @@ gc_xall = [lonc(1), lonc(1), lonc(2), lonc(2), lonc(1)];
 gc_yall = [latc(1), latc(2), latc(2), latc(1), latc(1)];
 % ensure both are clockwise
 [gc_xall, gc_yall] = poly2cw(gc_xall, gc_yall);
-[pixloncorn, pixlatcorn] = uncross_corners(pixloncorn, pixlatcorn);
+% now handled at the beginning of grid_to_gc
+%[pixloncorn, pixlatcorn] = uncross_corners(pixloncorn, pixlatcorn);
 [pixloncorn, pixlatcorn] = poly2cw(pixloncorn, pixlatcorn);
 % create a polygon that represents the area of overlap and calculate its area
 % in km.
