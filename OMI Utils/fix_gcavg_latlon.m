@@ -8,8 +8,8 @@ D = load(fullfile(path_in, F(1).name));
 sz = size(D.GC_avg.Longitude);
 xres = 360/sz(1);
 yres = 180/sz(2);
-lonvec = -180+xres/2:xres:180-xres;
-latvec = -90+yres/2:yres:90-yres;
+lonvec = -180+xres/2:xres:180-xres/2;
+latvec = -90+yres/2:yres:90-yres/2;
 [LON, LAT] = meshgrid(lonvec, latvec);
 
 parfor f=1:numel(F)
