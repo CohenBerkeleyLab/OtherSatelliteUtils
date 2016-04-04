@@ -71,13 +71,6 @@ parfor d=datenum(start_date):datenum(end_date)
         GC(s) = grid_to_gc(D.Data(s), GC(s),loncorn,latcorn,DEBUG_LEVEL);
     end
 
-    if DEBUG_LEVEL > 2; fprintf('W%d: Adding lat/lon to GC\n',t.ID); end
-    for s=1:numel(GC)
-        % Add these now so that grid_to_gc doesn't try to grid them
-        GC(s).Longitude = lon;
-        GC(s).Latitude = lat;
-    end
-
     % Average over the days' files to get a single day's data
     if DEBUG_LEVEL > 2; fprintf('W%d: Averaging GC structure\n',t.ID); end
     GC_avg = struct(GC(1));
@@ -95,6 +88,10 @@ parfor d=datenum(start_date):datenum(end_date)
             GC_avg = rmfield(GC_avg, fns{f});
         end
     end
+
+    GC_avg.Longitude = lon;
+    GC_avg.Latitude = lat;
+  
 
     save_name = sprintf('OMI_BEHRL2b_%04d%02d%02d.mat',year(d),month(d),day(d));
     if DEBUG_LEVEL > 0; fprintf('W%d: Saving file %s\n', t.ID, fullfile(save_path, save_name)); end
