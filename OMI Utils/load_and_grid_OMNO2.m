@@ -13,9 +13,14 @@ if isempty(onCluster)
     onCluster = false;
 end
 
+shareroot = getenv('SYNOMNT');
+
 if onCluster
     omno2_path = '/global/home/users/laughner/myscratch/SAT/OMI/OMNO2';
     save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/2.5x2.0-avg-newweight';
+elseif ~isempty(shareroot)
+    omno2_path = fullfile(shareroot,'share-sat','SAT','OMI','OMNO2');
+    save_path = fullfile(shareroot,'share2','USERS','LaughnerJ','DOMINO-OMNO2_comparison','OMNO2','2.5x2.0-avg-test');
 else
     omno2_path = '/Volumes/share-sat/SAT/OMI/OMNO2';
     save_path = '/Volumes/share2/USERS/LaughnerJ/DOMINO-OMNO2_comparision/OMNO2/0.25x0.25';
