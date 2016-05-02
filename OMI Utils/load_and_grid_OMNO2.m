@@ -13,9 +13,14 @@ if isempty(onCluster)
     onCluster = false;
 end
 
+shareroot = getenv('SYNOMNT');
+
 if onCluster
     omno2_path = '/global/home/users/laughner/myscratch/SAT/OMI/OMNO2';
     save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/2.5x2.0-avg-newweight';
+elseif ~isempty(shareroot)
+    omno2_path = fullfile(shareroot,'share-sat','SAT','OMI','OMNO2');
+    save_path = fullfile(shareroot,'share2','USERS','LaughnerJ','DOMINO-OMNO2_comparison','OMNO2','2.5x2.0-avg-test');
 else
     omno2_path = '/Volumes/share-sat/SAT/OMI/OMNO2';
     save_path = '/Volumes/share2/USERS/LaughnerJ/DOMINO-OMNO2_comparision/OMNO2/0.25x0.25';
@@ -74,7 +79,7 @@ latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
 latcorn(:,end) = 91;
 
-parfor d=datenum(start_date):datenum(end_date)
+for d=datenum(start_date):datenum(end_date)
     t = getCurrentTask();
     if isempty(t)
         t.ID = 0;
@@ -112,7 +117,7 @@ parfor d=datenum(start_date):datenum(end_date)
     %lonmin = -180;  lonmax = 180;
     %latmin = -90;   latmax = 90;
     %reslat = 2; reslon = 2.5;
-    
+    DB = struct('a', [], 'swath', [], 'lon',[],'lat',[],'aw',[],'Q',[],'W',[]); % debugging only
     for s=1:numel(F)
         if DEBUG_LEVEL > 1; fprintf('\t W%d: Handling file %d of %d\n',t.ID,s,numel(F)); end
         hi = h5info(fullfile(full_path, F(s).name));
@@ -120,7 +125,7 @@ parfor d=datenum(start_date):datenum(end_date)
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
         Data(s) = read_fields(Data(s), hi, 1, data_fields);
         %OMI(s) = add2grid_DOMINO(Data(s),OMI(s),reslat,reslon,[lonmin, lonmax],[latmin, latmax]);
-        GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn,DEBUG_LEVEL);
+        [GC(s), DB] = grid_to_gc(Data(s), GC(s),loncorn,latcorn,DEBUG_LEVEL,DB,s);
     end
 
     % Average over the days' files to get a single day's data
@@ -171,7 +176,7 @@ function [loncorn, latcorn] = grid_corners(lonres, latres)
     [loncorn, latcorn] = meshgrid(loncorn, latcorn);
 end
 
-function GC = grid_to_gc(Data, GC, gloncorn, glatcorn, DEBUG_LEVEL)
+function [GC, DB] = grid_to_gc(Data, GC, gloncorn, glatcorn, DEBUG_LEVEL, DB, swathnum)
 %[gloncorn, glatcorn] = geos_chem_corners();
 
 sz = size(gloncorn)-1;
@@ -244,6 +249,16 @@ for a=1:numel(Data.Longitude)
             % The areaweight will be divided out at the end of the loop
             GC.(fns{c})(xx,yy) = nansum2([GC.(fns{c})(xx,yy), Data.(fns{c})(a) .* Weight]);
         end 
+    end
+    % Debugging only
+    if xxf == 5 && yyf == 17
+        DB.a = [DB.a, a];
+        DB.swath = [DB.swath, swathnum];
+        DB.lon = [DB.lon, Data.Longitude(a)];
+        DB.lat = [DB.lat, Data.Latitude(a)];
+        DB.aw = [DB.aw, Data.Areaweight(a)];
+        DB.Q = [DB.Q, Q];
+        DB.W = [DB.W, Weight];
     end
 end
 

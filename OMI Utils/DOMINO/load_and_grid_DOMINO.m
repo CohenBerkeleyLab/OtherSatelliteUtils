@@ -13,9 +13,14 @@ if isempty(onCluster)
     onCluster = false;
 end
 
+shareroot = getenv('SYNOMNT');
+
 if onCluster
     domino_path = '/global/home/users/laughner/myscratch/SAT/OMI/DOMINOv2';
     save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/2.5x2.0-avg-newweight';
+elseif ~isempty(shareroot)
+    domino_path = fullfile(shareroot,'share-sat','SAT','OMI','DOMINOv2.0');
+    save_path = fullfile(shareroot,'share2','USERS','LaughnerJ','DOMINO-OMNO2_comparison','DOMINO','2.5x2.0-avg-test');
 else
     domino_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0';
     save_path = '/Volumes/share-sat/SAT/OMI/DOMINOv2.0/MatFiles';
@@ -74,7 +79,7 @@ latcorn(:,end) = 91;
 
 min_date = today;
 
-parfor d=datenum(start_date):datenum(end_date)
+for d=datenum(start_date):datenum(end_date)
     t = getCurrentTask;
     if isempty(t)
         t.ID = 0;
@@ -112,7 +117,7 @@ parfor d=datenum(start_date):datenum(end_date)
     %lonmin = -180;  lonmax = 180;
     %latmin = -90;   latmax = 90;
     %reslat = 2; reslon = 2.5;
-    
+    DB = struct('lon',[],'lat',[],'swath',[],'aw',[],'Q',[],'W',[]); % debugging only
     for s=1:numel(F)
         if DEBUG_LEVEL > 1; fprintf('\tW%d: Handling file %d of %d\n',t.ID,s,numel(F)); end
         hi = h5info(fullfile(full_path, F(s).name));
@@ -120,7 +125,7 @@ parfor d=datenum(start_date):datenum(end_date)
         Data(s) = read_fields(Data(s), hi, 2, geo_fields);
         Data(s) = read_fields(Data(s), hi, 1, data_fields);
         %OMI(s) = add2grid_DOMINO(Data(s),OMI(s),reslat,reslon,[lonmin, lonmax],[latmin, latmax]);
-        GC(s) = grid_to_gc(Data(s), GC(s),loncorn,latcorn);
+        [GC(s), DB] = grid_to_gc(Data(s), GC(s),loncorn,latcorn,DB,s);
     end
     
 
@@ -166,7 +171,7 @@ function [loncorn, latcorn] = grid_corners(lonres, latres)
     [loncorn, latcorn] = meshgrid(loncorn, latcorn);
 end
 
-function GC = grid_to_gc(Data, GC, gloncorn, glatcorn)
+function [GC, DB] = grid_to_gc(Data, GC, gloncorn, glatcorn, DB, swathnum)
 %[gloncorn, glatcorn] = geos_chem_corners();
 
 sz = size(gloncorn)-1;
@@ -228,7 +233,11 @@ for a=1:numel(Data.Longitude)
     end
     xxf = find(xx); yyf = find(yy);
     Q = calc_pix_grid_overlap(glon_vec, glat_vec, xxf, yyf, gc_area(xx,yy), squeeze(Data.Loncorn(ax,ay,:)), squeeze(Data.Latcorn(ax,ay,:)), earth_ellip);
-    Weight = Data.Areaweight(a) * Q;
+    if ~isnan(Data.TroposphericVerticalColumn(a))
+        Weight = Data.Areaweight(a) * Q;
+    else
+        Weight = nan;
+    end
     TotalAreaweight(xx,yy) = nansum2([TotalAreaweight(xx,yy), Weight]);
     for c=1:numel(fns)
         if iscell(GC.(fns{c}))
@@ -237,6 +246,17 @@ for a=1:numel(Data.Longitude)
             % The areaweight will be divided out at the end of the loop
             GC.(fns{c})(xx,yy) = nansum2([GC.(fns{c})(xx,yy), Data.(fns{c})(a) .* Weight]);
         end 
+    end
+    
+    % Debugging only
+    if xxf == 5 && yyf == 17
+        DB.a = a;
+        DB.lon = [DB.lon, Data.Longitude(a)];
+        DB.lat = [DB.lat, Data.Latitude(a)];
+        DB.swath = [DB.swath, swathnum];
+        DB.aw = [DB.aw, Data.Areaweight(a)];
+        DB.Q = [DB.Q, Q];
+        DB.W = [DB.W, Weight];
     end
 end
 
