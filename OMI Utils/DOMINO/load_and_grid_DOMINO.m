@@ -79,7 +79,7 @@ latcorn(:,end) = 91;
 
 min_date = today;
 
-for d=datenum(start_date):datenum(end_date)
+parfor d=datenum(start_date):datenum(end_date)
     t = getCurrentTask;
     if isempty(t)
         t.ID = 0;
