@@ -17,7 +17,7 @@ shareroot = getenv('SYNOMNT');
 
 if onCluster
     omno2_path = '/global/home/users/laughner/myscratch/SAT/OMI/OMNO2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/2.5x2.0-avg-newweight';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/OMNO2/2.5x2.0-avg-newweight-allvcd';
 elseif ~isempty(shareroot)
     omno2_path = fullfile(shareroot,'share-sat','SAT','OMI','OMNO2');
     save_path = fullfile(shareroot,'share2','USERS','LaughnerJ','DOMINO-OMNO2_comparison','OMNO2','2.5x2.0-avg-test');
@@ -79,7 +79,7 @@ latcorn = latcorn';
 lat = latcorn(1:end-1,1:end-1) + yres/2;
 latcorn(:,end) = 91;
 
-for d=datenum(start_date):datenum(end_date)
+parfor d=datenum(start_date):datenum(end_date)
     t = getCurrentTask();
     if isempty(t)
         t.ID = 0;
@@ -194,13 +194,13 @@ row_anom = Data.XTrackQualityFlags > 0;
 vcd_qual = Data.VcdQualityFlags > 0;
 clds = Data.CloudFraction > 0.3;
 alb = Data.TerrainReflectivity > 0.3;
-negvcds = Data.ColumnAmountNO2Trop < 0;
-extreme_vcd = Data.ColumnAmountNO2Trop > 1e17;
+%negvcds = Data.ColumnAmountNO2Trop < 0;
+%extreme_vcd = Data.ColumnAmountNO2Trop > 1e17;
 
 fns = fieldnames(GC);
 for c=1:numel(fns)
     if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans before fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
-    Data.(fns{c})(row_anom | vcd_qual | clds | alb | negvcds | extreme_vcd) = nan;
+    Data.(fns{c})(row_anom | vcd_qual | clds | alb) = nan;
     if DEBUG_LEVEL > 2; fprintf('File %s: Data.%s is %.4f %% nans after fill removal\n',Data.Filename(19:32), fns{c}, sum(isnan(Data.(fns{c})(:)))/numel(Data.(fns{c}))); end
 end
 

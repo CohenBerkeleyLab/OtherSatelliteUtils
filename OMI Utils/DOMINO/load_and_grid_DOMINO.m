@@ -17,7 +17,7 @@ shareroot = getenv('SYNOMNT');
 
 if onCluster
     domino_path = '/global/home/users/laughner/myscratch/SAT/OMI/DOMINOv2';
-    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/2.5x2.0-avg-newweight';
+    save_path = '/global/home/users/laughner/myscratch/MATLAB/Data/OMI/DOMINO/2.5x2.0-avg-newweight-allvcd';
 elseif ~isempty(shareroot)
     domino_path = fullfile(shareroot,'share-sat','SAT','OMI','DOMINOv2.0');
     save_path = fullfile(shareroot,'share2','USERS','LaughnerJ','DOMINO-OMNO2_comparison','DOMINO','2.5x2.0-avg-test');
@@ -190,11 +190,11 @@ TotalAreaweight = zeros(size(GC.TroposphericVerticalColumn));
 row_anom = Data.TroposphericColumnFlag < 0;
 clds = Data.CloudFraction > 0.3;
 alb = Data.SurfaceAlbedo > 0.3;
-negvcds = Data.TroposphericVerticalColumn < 0;
+%negvcds = Data.TroposphericVerticalColumn < 0;
 
 fns = fieldnames(GC);
 for c=1:numel(fns)
-    Data.(fns{c})(row_anom | clds | alb | negvcds) = nan;
+    Data.(fns{c})(row_anom | clds | alb) = nan;
 end
 
 glon_vec = gloncorn(:,1);
