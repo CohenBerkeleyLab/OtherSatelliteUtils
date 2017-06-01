@@ -41,6 +41,10 @@ hi = h5info(filename);
 Data.Longitude = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'Longitude')));
 Data.Latitude = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'Latitude')));
 Data.Pressure = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'Pressure')));
+Data.SolarZenithAngle = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'SolarZenithAngle')));
+Data.OrbitGeodeticAngle = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'OrbitGeodeticAngle')));
+Data.LineOfSightAngle = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'LineOfSightAngle')));
+Data.LocalSolarTime = double(h5read(hi.Filename, h5dsetname(hi,1,2,1,2,'LocalSolarTime')));
 
 % Returns the data filtered such that poor quality data is replaced with
 % NaNs.
@@ -75,21 +79,23 @@ E = JLLErrors;
 switch cmpd_name
     case 'HNO3'
         precision_mat = precision < 0;
-        quality_mat = quality <= 0.8;
+        quality_mat = quality <= 1.0; %1.0 was used in Miyazaki 2012 %0.8 is what's recommended in the data document;
         status_mat = status > 0;
         convergence_mat = convergence >= 1.03;
+        fill_val_mat = data < -900; % Fill value is -999.99 (approximately)
         addn_matrix = hno3_addn_fxn(data,pressure);
     case 'O3'
         precision_mat = precision < 0;
         quality_mat = quality <= 1.0;
         status_mat = mod(status,2) > 0;
         convergence_mat = convergence >= 1.03;
+        fill_val_mat = data < -900; % Fill value is -999.99 (approximately)
         addn_matrix = false(size(data));
     otherwise
         E.notimplemented('Filtering criteria for %s has not been set up',cmpd_name);
 end
 
-data(precision_mat | addn_matrix) = nan;
+data(precision_mat | addn_matrix | fill_val_mat) = nan;
 data(:, quality_mat | status_mat | convergence_mat) = nan;
 
 end
@@ -111,7 +117,7 @@ set_to_nan = false(size(data));
 % Profiles load as (pressure level) x (ground coordinate), so iterate over
 % each ground coordinate and check the pixel.
 for a=1:size(data,2)
-    if data(p316,a) < -2e-9 || any(data(p215to68,a)) < 1.6e-9
+    if data(p316,a) < -2e-9 || any(data(p215to68,a)) < -1.6e-9
         set_to_nan(:,a) = true;
     end
 end
