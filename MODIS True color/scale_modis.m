@@ -1,5 +1,5 @@
 function [ varargout ] = scale_modis( varargin )
-%UNTITLED3 Summary of this function goes here
+%SCALE_MODIS Scales MODIS truecolor data to display correctly as an image
 %   See http://www.idlcoyote.com/ip_tips/brightmodis.html
 %   and http://glasslab.engr.ccny.cuny.edu/u/fhs/gclust/doc/_modules/glasslab_cluster/io/modis.html#rgb
 
