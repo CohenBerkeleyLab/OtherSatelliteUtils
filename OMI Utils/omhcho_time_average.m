@@ -1,4 +1,4 @@
-function [ values, lon_grid, lat_grid ] = omhcho_time_average(start_dates, end_dates, varargin)
+function [ values, lon_grid, lat_grid, weights ] = omhcho_time_average(start_dates, end_dates, varargin)
 %OMHCHO_TIME_AVERAGE Grid and average OMI HCHO data in time
 %   [ VALUES, LON_GRID, LAT_GRID ] = OMHCHO_TIME_AVERAGE( START_DATES,
 %   END_DATES ) Loads OMI HCHO data between START_DATES and END_DATES.
@@ -60,6 +60,7 @@ for i_range = 1:numel(start_datenums)
 end
 
 values = values_avg.getWeightedAverage();
+weights = values_avg.weights;
 lon_grid = the_grid.GridLon;
 lat_grid = the_grid.GridLat;
 
