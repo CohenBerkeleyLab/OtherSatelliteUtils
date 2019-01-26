@@ -1,4 +1,4 @@
-function [ values, lon_grid, lat_grid, weights ] = omhcho_time_average(start_dates, end_dates, varargin)
+function [ values, lon_grid, lat_grid, weights, stddev ] = omhcho_time_average(start_dates, end_dates, varargin)
 %OMHCHO_TIME_AVERAGE Grid and average OMI HCHO data in time
 %   [ VALUES, LON_GRID, LAT_GRID ] = OMHCHO_TIME_AVERAGE( START_DATES,
 %   END_DATES ) Loads OMI HCHO data between START_DATES and END_DATES.
@@ -19,7 +19,10 @@ function [ values, lon_grid, lat_grid, weights ] = omhcho_time_average(start_dat
 %       instance. Default is GlobeGrid(0.05, 'domain', 'us').
 E = JLLErrors;
 p = advInputParser;
+p.addParameter('dayofweek', 'UMTWRFS');
+p.addParameter('holidays', false);
 p.addParameter('grid', GlobeGrid(0.05, 'domain', 'us'));
+p.addParameter('DEBUG_LEVEL',1);
 
 p.parse(varargin{:});
 pout = p.Results;
@@ -32,13 +35,39 @@ if numel(start_datenums) ~= numel(end_datenums)
 end
 
 the_grid = pout.grid;
+days_of_week = pout.dayofweek;
 
-values_avg = RunningAverage;
+if (~islogical(pout.holidays) && ~isnumeric(pout.holidays)) || ~isscalar(pout.holidays)
+    E.badinput('"holidays" must be a scalar logical or numeric value');
+elseif pout.holidays
+    holidays = [];
+else
+    holidays = 0;
+end
+
+DEBUG_LEVEL = pout.DEBUG_LEVEL;
+
+% Convert 1 letter day abbreviations to a vector that isbusday can
+% understand
+day_abbrevs = {'U', 'M', 'T', 'W', 'R', 'F', 'S'};
+weekend = true(size(day_abbrevs));
+for a=1:numel(day_abbrevs)
+    weekend(a) = isempty(strfind(upper(days_of_week), day_abbrevs{a}));
+end
+
+values_avg = RunningAverage();
+stddev_run = RunningStdDev();
 omhcho_files = [];
 last_path = '';
 
 for i_range = 1:numel(start_datenums)
     for dnum = start_datenums(i_range):end_datenums(i_range)
+        if ~isbusday(dnum, holidays, weekend)
+            if DEBUG_LEVEL > 0
+                fprintf('Skipping %s due to day of week specification (%s)\n', F(a).name, days_of_week);
+            end
+            continue
+        end
         fprintf('Now gridding %s\n', datestr(dnum));
         curr_files = get_file_for_date(dnum);
         for i_file = 1:numel(curr_files)
@@ -55,11 +84,13 @@ for i_range = 1:numel(start_datenums)
             latcorn = convert_pix_corners(Data.PixelCornerLatitudes);
             [gridded_val, gridded_wt] = cvm_generic_wrapper(loncorn, latcorn, Data.ColumnAmount, the_grid, 'weights', Data.Weight);
             values_avg.addData(gridded_val, gridded_wt);
+            stddev_run.addData(gridded_val, gridded_wt);
         end
     end
 end
 
 values = values_avg.getWeightedAverage();
+stddev = stddev_run.getReliabilityStdDev();
 weights = values_avg.weights;
 lon_grid = the_grid.GridLon;
 lat_grid = the_grid.GridLat;
