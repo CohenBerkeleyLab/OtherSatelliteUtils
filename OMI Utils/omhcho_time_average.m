@@ -56,7 +56,7 @@ for a=1:numel(day_abbrevs)
 end
 
 values_avg = RunningAverage();
-stddev_run = RunningStdDev();
+stddev_run = RunningAverage();
 omhcho_files = [];
 last_path = '';
 
@@ -64,7 +64,7 @@ for i_range = 1:numel(start_datenums)
     for dnum = start_datenums(i_range):end_datenums(i_range)
         if ~isbusday(dnum, holidays, weekend)
             if DEBUG_LEVEL > 0
-                fprintf('Skipping %s due to day of week specification (%s)\n', F(a).name, days_of_week);
+                fprintf('Skipping %s due to day of week specification (%s)\n', datestr(dnum), days_of_week);
             end
             continue
         end
@@ -82,15 +82,19 @@ for i_range = 1:numel(start_datenums)
             
             loncorn = convert_pix_corners(Data.PixelCornerLongitudes);
             latcorn = convert_pix_corners(Data.PixelCornerLatitudes);
-            [gridded_val, gridded_wt] = cvm_generic_wrapper(loncorn, latcorn, Data.ColumnAmount, the_grid, 'weights', Data.Weight);
+            [gridded_val, gridded_wt] = cvm_generic_wrapper(loncorn, latcorn, Data.ReferenceSectorCorrectedVerticalColumn, the_grid, 'weights', Data.Weight);
+            gridded_uncert = cvm_generic_wrapper(loncorn, latcorn, Data.ColumnUncertainty, the_grid, 'weights', Data.Weight);
             values_avg.addData(gridded_val, gridded_wt);
-            stddev_run.addData(gridded_val, gridded_wt);
+            stddev_run.addData(gridded_uncert.^2, gridded_wt);
         end
     end
 end
 
 values = values_avg.getWeightedAverage();
-stddev = stddev_run.getReliabilityStdDev();
+% I added the column uncertainties in quadrature, so we take
+% the square root here to get back to the final value, divided
+% by sqrt(n) to calculate the standard error of the mean
+stddev = sqrt(stddev_run.values) ./ sqrt(stddev_run.weights); 
 weights = values_avg.weights;
 lon_grid = the_grid.GridLon;
 lat_grid = the_grid.GridLat;
@@ -119,7 +123,7 @@ lat_grid = the_grid.GridLat;
 
     function Data = load_omhcho_h5(h5filename, xx_rows)
         hi = h5info(h5filename);
-        group1_fields = {'AMFCloudFraction','ColumnAmount','MainDataQualityFlag','PixelCornerLatitudes','PixelCornerLongitudes'};
+        group1_fields = {'AMFCloudFraction','ReferenceSectorCorrectedVerticalColumn','ColumnUncertainty','MainDataQualityFlag','PixelCornerLatitudes','PixelCornerLongitudes'};
         group2_fields = {'XtrackQualityFlags'};
         Data = make_empty_struct_from_cell([group1_fields, group2_fields]);
         
@@ -148,7 +152,7 @@ lat_grid = the_grid.GridLat;
 end
 
 function weights = reject_bad_pix(Data)
-weights = zeros(size(Data.ColumnAmount));
+weights = zeros(size(Data.ReferenceSectorCorrectedVerticalColumn));
 xx = true(size(weights));
 xx = xx & Data.AMFCloudFraction <= 0.2;
 xx = xx & Data.MainDataQualityFlag == 0;
