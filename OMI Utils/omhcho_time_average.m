@@ -22,6 +22,7 @@ p = advInputParser;
 p.addParameter('dayofweek', 'UMTWRFS');
 p.addParameter('holidays', false);
 p.addParameter('grid', GlobeGrid(0.05, 'domain', 'us'));
+p.addParameter('uncertainty', 'cutoff');
 p.addParameter('DEBUG_LEVEL',1);
 
 p.parse(varargin{:});
@@ -44,6 +45,8 @@ elseif pout.holidays
 else
     holidays = 0;
 end
+
+uncertainty_mode = pout.uncertainty;
 
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 
@@ -123,7 +126,7 @@ lat_grid = the_grid.GridLat;
 
     function Data = load_omhcho_h5(h5filename, xx_rows)
         hi = h5info(h5filename);
-        group1_fields = {'AMFCloudFraction','ReferenceSectorCorrectedVerticalColumn','ColumnUncertainty','MainDataQualityFlag','PixelCornerLatitudes','PixelCornerLongitudes'};
+        group1_fields = {'AMFCloudFraction','ReferenceSectorCorrectedVerticalColumn','ColumnUncertainty','MainDataQualityFlag','FittingRMS','PixelCornerLatitudes','PixelCornerLongitudes'};
         group2_fields = {'XtrackQualityFlags'};
         Data = make_empty_struct_from_cell([group1_fields, group2_fields]);
         
@@ -149,17 +152,24 @@ lat_grid = the_grid.GridLat;
             Data.(fname)(:,~xx_rows) = [];
         end
     end
+
+    function weights = reject_bad_pix(Data)
+        weights = zeros(size(Data.ReferenceSectorCorrectedVerticalColumn));
+        xx = true(size(weights));
+        xx = xx & Data.AMFCloudFraction <= 0.2;
+        xx = xx & Data.MainDataQualityFlag == 0;
+        xx = xx & bitand(Data.XtrackQualityFlags, int8(3)) == 0;
+        if strcmpi(uncertainty_mode, 'cutoff')
+            xx = xx & Data.FittingRMS < 0.02;
+        end
+        weights(xx) = 1;
+        if strcmpi(uncertainty_mode, 'weight')
+            weights = weights * 1 ./ Data.FittingRMS;
+        end
+    end
 end
 
-function weights = reject_bad_pix(Data)
-weights = zeros(size(Data.ReferenceSectorCorrectedVerticalColumn));
-xx = true(size(weights));
-xx = xx & Data.AMFCloudFraction <= 0.2;
-xx = xx & Data.MainDataQualityFlag == 0;
-xx = xx & bitand(Data.XtrackQualityFlags, int8(3)) == 0;
-weights(xx) = 1;
 
-end
 
 function corners = convert_pix_corners(tiled_corners)
 corners = nan([4, size(tiled_corners)-1]);
