@@ -22,7 +22,7 @@ p = advInputParser;
 p.addParameter('dayofweek', 'UMTWRFS');
 p.addParameter('holidays', false);
 p.addParameter('grid', GlobeGrid(0.05, 'domain', 'us'));
-p.addParameter('uncertainty', 'cutoff');
+p.addParameter('uncertainty', 'weight');
 p.addParameter('DEBUG_LEVEL',1);
 
 p.parse(varargin{:});
